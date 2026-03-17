@@ -1,0 +1,35 @@
+# Python caches
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# IDE/editor
+.vscode/
+.idea/
+
+# Environment/secrets
+.env
+*.env.local
+
+# Local databases
+*.db
+*.sqlite3
+arcticai.db
+
+# Logs
+debug-*.log
+
+# Test / tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node-style artifacts (if ever added)
+node_modules/
+dist/
+build/

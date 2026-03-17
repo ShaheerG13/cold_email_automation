@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ArcticAI Test UI</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; padding: 24px; }
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+      @media (max-width: 980px) { .grid { grid-template-columns: 1fr; } }
+      .card { border: 1px solid rgba(128,128,128,.35); border-radius: 12px; padding: 16px; }
+      label { display: block; font-size: 12px; opacity: 0.8; margin-top: 10px; }
+      input, textarea { width: 100%; box-sizing: border-box; padding: 10px; border-radius: 10px; border: 1px solid rgba(128,128,128,.35); background: transparent; }
+      textarea { min-height: 90px; resize: vertical; }
+      button { padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(128,128,128,.35); background: rgba(128,128,128,.14); cursor: pointer; }
+      button.primary { background: rgba(70,140,255,.25); border-color: rgba(70,140,255,.5); }
+      .row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+      pre { white-space: pre-wrap; word-break: break-word; border-radius: 12px; padding: 12px; border: 1px solid rgba(128,128,128,.35); background: rgba(128,128,128,.08); max-height: 420px; overflow: auto; }
+      .hint { font-size: 12px; opacity: 0.75; margin-top: 8px; }
+      .pill { display:inline-block; font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid rgba(128,128,128,.35); opacity: .9; }
+      .company-list { margin-top: 10px; max-height: 360px; overflow: auto; }
+      .company-item { padding: 8px 10px; border-radius: 10px; border: 1px solid rgba(128,128,128,.3); margin-bottom: 8px; cursor: pointer; }
+      .company-item.active { border-color: rgba(70,140,255,.7); background: rgba(70,140,255,.12); }
+      .company-title { font-weight: 600; }
+      .company-meta { font-size: 12px; opacity: 0.85; margin-top: 4px; }
+      .company-email { font-size: 13px; margin-top: 4px; }
+    </style>
+  </head>
+  <body>
+    <h2 style="margin:0 0 10px 0;">ArcticAI — Test UI <span class="pill">approval-first</span></h2>
+    <div class="hint">
+      This UI calls your local API at <code id="base"></code>. Use it to test <code>/search</code> and the outreach draft → approve → send flow.
+    </div>
+
+    <div class="grid" style="margin-top:16px;">
+      <div class="card">
+        <h3 style="margin:0 0 8px 0;">1) Pipeline: POST /search</h3>
+
+        <label>Location</label>
+        <input id="location" value="Leesburg, VA" />
+
+        <label>Field</label>
+        <input id="field" value="cybersecurity" />
+
+        <label>Experience</label>
+        <textarea id="experience">Built vulnerability scanner using Flask and ML</textarea>
+
+        <label>Target roles (comma-separated)</label>
+        <input id="roles" value="intern,junior" />
+
+        <div class="row">
+          <button class="primary" id="btnSearch">Run /search</button>
+          <button id="btnClearSearch">Clear</button>
+        </div>
+
+        <label>Results</label>
+        <div id="searchOut" class="company-list"></div>
+
+        <div class="hint">Tip: copy a draft into Outreach below to persist/approve/send.</div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin:0 0 8px 0;">2) Outreach: draft → approve → send</h3>
+
+        <label>User ID</label>
+        <input id="userId" value="1" />
+
+        <label>Company name</label>
+        <input id="companyName" value="Example Security Co" />
+
+        <label>Company website (optional)</label>
+        <input id="companyWebsite" value="https://example.com" />
+
+        <label>To email</label>
+        <input id="toEmail" value="careers@example.com" />
+
+        <label>Subject</label>
+        <input id="subject" value="Interest in cybersecurity opportunities" />
+
+        <label>Body</label>
+        <textarea id="body">Hi there —\n\nQuick note…</textarea>
+
+        <div class="row">
+          <button class="primary" id="btnCreate">Create draft</button>
+          <button id="btnApprove">Approve</button>
+          <button id="btnSend">Send</button>
+          <button id="btnList">List drafts</button>
+        </div>
+
+        <div class="hint">Current Outreach ID: <code id="outreachId">-</code></div>
+
+        <label>Response (raw)</label>
+        <pre id="outOut">{}</pre>
+
+        <div class="hint">
+          Send behavior:
+          <ul style="margin:6px 0 0 18px; padding:0;">
+            <li>Must be approved first (409 otherwise)</li>
+            <li>Rate limited (5/day per user) if Redis is configured</li>
+            <li>Returns 501 until SendGrid/Gmail is configured</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const base = `${location.protocol}//${location.host}`;
+      document.getElementById("base").textContent = base;
+
+      async function call(path, opts) {
+        const res = await fetch(`${base}${path}`, opts);
+        const text = await res.text();
+        let json = null;
+        try { json = JSON.parse(text); } catch {}
+        return { ok: res.ok, status: res.status, data: json ?? text };
+      }
+
+      function pretty(v) { return JSON.stringify(v, null, 2); }
+
+      let lastSearch = null;
+      const searchOut = document.getElementById("searchOut");
+      const outOut = document.getElementById("outOut");
+      const outreachIdEl = document.getElementById("outreachId");
+
+      function renderSearchResults(payload) {
+        lastSearch = payload;
+        searchOut.innerHTML = "";
+        if (!payload || !payload.data || !Array.isArray(payload.data.items) || !payload.data.items.length) {
+          searchOut.textContent = "No companies found.";
+          return;
+        }
+        payload.data.items.forEach((item, idx) => {
+          const div = document.createElement("div");
+          div.className = "company-item" + (idx === 0 ? " active" : "");
+          div.dataset.index = String(idx);
+          const company = item.company || {};
+          const contacts = item.contacts || [];
+          const draft = item.draft || {};
+          const firstEmail = contacts[0]?.email || "—";
+          div.innerHTML = `
+            <div class="company-title">${company.name || "Unnamed company"}</div>
+            <div class="company-meta">
+              ${company.website ? `<span>${company.website}</span>` : ""}<br/>
+              ${company.about ? `<span>${company.about}</span>` : ""}
+            </div>
+            <div class="company-email">First email: <code>${firstEmail}</code></div>
+          `;
+          div.onclick = () => {
+            document.querySelectorAll(".company-item").forEach(el => el.classList.remove("active"));
+            div.classList.add("active");
+            applyItemToDraft(idx);
+          };
+          searchOut.appendChild(div);
+        });
+        // auto-apply first item
+        applyItemToDraft(0);
+      }
+
+      function applyItemToDraft(index) {
+        if (!lastSearch || !lastSearch.data || !Array.isArray(lastSearch.data.items)) return;
+        const item = lastSearch.data.items[index];
+        if (!item) return;
+        const company = item.company || {};
+        const contacts = item.contacts || [];
+        const draft = item.draft || {};
+        let firstEmail = contacts[0]?.email || "";
+        if (!firstEmail && company.website) {
+          const host = company.website.replace("https://","").replace("http://","").split("/",1)[0];
+          firstEmail = `hiring@${host}`;
+        }
+
+        document.getElementById("companyName").value = company.name || "";
+        document.getElementById("companyWebsite").value = company.website || "";
+        document.getElementById("toEmail").value = firstEmail;
+        if (draft.subject) document.getElementById("subject").value = draft.subject;
+        if (draft.body) document.getElementById("body").value = draft.body;
+      }
+
+      document.getElementById("btnSearch").onclick = async () => {
+        const body = {
+          location: document.getElementById("location").value,
+          field: document.getElementById("field").value,
+          experience: document.getElementById("experience").value,
+          target_roles: document.getElementById("roles").value.split(",").map(s => s.trim()).filter(Boolean),
+        };
+        const r = await call("/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        renderSearchResults(r);
+      };
+
+      document.getElementById("btnClearSearch").onclick = () => { searchOut.textContent = ""; lastSearch = null; };
+
+      document.getElementById("btnCreate").onclick = async () => {
+        const body = {
+          user_id: Number(document.getElementById("userId").value),
+          company_name: document.getElementById("companyName").value,
+          company_website: document.getElementById("companyWebsite").value || null,
+          to_email: document.getElementById("toEmail").value,
+          subject: document.getElementById("subject").value,
+          body: document.getElementById("body").value,
+        };
+        const r = await call("/outreach", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        outOut.textContent = pretty(r);
+        if (r.ok && r.data && r.data.id) outreachIdEl.textContent = r.data.id;
+      };
+
+      document.getElementById("btnApprove").onclick = async () => {
+        const id = outreachIdEl.textContent;
+        if (!id || id === "-") return (outOut.textContent = pretty({ ok: false, error: "Create a draft first" }));
+        const r = await call(`/outreach/${id}/approve`, { method: "POST" });
+        outOut.textContent = pretty(r);
+      };
+
+      document.getElementById("btnSend").onclick = async () => {
+        const id = outreachIdEl.textContent;
+        if (!id || id === "-") return (outOut.textContent = pretty({ ok: false, error: "Create a draft first" }));
+        const r = await call(`/outreach/${id}/send`, { method: "POST" });
+        outOut.textContent = pretty(r);
+      };
+
+      document.getElementById("btnList").onclick = async () => {
+        const userId = Number(document.getElementById("userId").value);
+        const r = await call(`/outreach?user_id=${encodeURIComponent(userId)}`, { method: "GET" });
+        outOut.textContent = pretty(r);
+      };
+    </script>
+  </body>
+</html>
+
