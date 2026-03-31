@@ -1,2 +1,0 @@
-"""ArcticAI backend package."""
-

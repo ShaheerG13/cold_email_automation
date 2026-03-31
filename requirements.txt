@@ -6,4 +6,5 @@ aiosqlite
 asyncpg
 redis
 httpx
+python-dotenv
 

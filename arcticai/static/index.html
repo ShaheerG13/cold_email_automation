@@ -25,6 +25,10 @@
       .company-title { font-weight: 600; }
       .company-meta { font-size: 12px; opacity: 0.85; margin-top: 4px; }
       .company-email { font-size: 13px; margin-top: 4px; }
+      .spinner { display: none; align-items: center; gap: 10px; margin-top: 12px; font-size: 13px; opacity: 0.75; }
+      .spinner.active { display: flex; }
+      .spinner-wheel { width: 18px; height: 18px; border: 2px solid rgba(128,128,128,.3); border-top-color: rgba(70,140,255,.8); border-radius: 50%; animation: spin .7s linear infinite; flex-shrink: 0; }
+      @keyframes spin { to { transform: rotate(360deg); } }
     </style>
   </head>
   <body>
@@ -52,6 +56,11 @@
         <div class="row">
           <button class="primary" id="btnSearch">Run /search</button>
           <button id="btnClearSearch">Clear</button>
+        </div>
+
+        <div class="spinner" id="searchSpinner">
+          <div class="spinner-wheel"></div>
+          <span>Searching for companies…</span>
         </div>
 
         <label>Results</label>
@@ -178,14 +187,24 @@
       }
 
       document.getElementById("btnSearch").onclick = async () => {
-        const body = {
-          location: document.getElementById("location").value,
-          field: document.getElementById("field").value,
-          experience: document.getElementById("experience").value,
-          target_roles: document.getElementById("roles").value.split(",").map(s => s.trim()).filter(Boolean),
-        };
-        const r = await call("/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-        renderSearchResults(r);
+        const spinner = document.getElementById("searchSpinner");
+        const btn = document.getElementById("btnSearch");
+        spinner.classList.add("active");
+        btn.disabled = true;
+        searchOut.innerHTML = "";
+        try {
+          const body = {
+            location: document.getElementById("location").value,
+            field: document.getElementById("field").value,
+            experience: document.getElementById("experience").value,
+            target_roles: document.getElementById("roles").value.split(",").map(s => s.trim()).filter(Boolean),
+          };
+          const r = await call("/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+          renderSearchResults(r);
+        } finally {
+          spinner.classList.remove("active");
+          btn.disabled = false;
+        }
       };
 
       document.getElementById("btnClearSearch").onclick = () => { searchOut.textContent = ""; lastSearch = null; };
