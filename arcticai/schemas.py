@@ -70,6 +70,12 @@ class OutreachListResponse(BaseModel):
     items: list[OutreachResponse] = Field(default_factory=list)
 
 
+class OutreachUpdateRequest(BaseModel):
+    to_email: str | None = None
+    subject: str | None = None
+    body: str | None = None
+
+
 class CompanyCreate(BaseModel):
     name: str
     website: str | None = None

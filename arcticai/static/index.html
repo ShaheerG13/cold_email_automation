@@ -120,7 +120,6 @@
         <button class="tab" data-tab="outreach">Outreach</button>
         <button class="tab" data-tab="companies">Companies</button>
       </div>
-      <span class="muted" style="margin-left:auto;">API: <code id="baseUrl"></code></span>
     </div>
 
     <div class="main">
@@ -165,7 +164,30 @@
       <!-- ═══════ OUTREACH TAB ═══════ -->
       <div class="panel" id="panel-outreach">
 
-        <!-- New draft form (collapsible) -->
+        <!-- Outreach list -->
+        <div class="section">
+          <div class="section-title">
+            Outreach Records <span class="count" id="outreachCount"></span>
+          </div>
+          <div class="filter-bar">
+            <label style="margin:0;">User ID</label>
+            <input id="o-filterUserId" type="number" value="1" style="width:70px;" />
+            <label style="margin:0;">Status</label>
+            <select id="o-filterStatus">
+              <option value="">All</option>
+              <option value="pending">Pending</option>
+              <option value="approved">Approved</option>
+              <option value="sent">Sent</option>
+              <option value="rejected">Rejected</option>
+              <option value="failed">Failed</option>
+            </select>
+            <button id="btnRefreshOutreach" class="sm">Refresh</button>
+          </div>
+          <div id="outreachList"></div>
+        </div>
+      </div>
+
+       <!-- New draft form (collapsible) -->
         <div class="section">
           <div class="section-title collapsible-toggle" id="toggleDraftForm" data-label="New Draft">+ New Draft</div>
           <div class="collapsible-body" id="draftFormBody">
@@ -201,29 +223,6 @@
             </div>
           </div>
         </div>
-
-        <!-- Outreach list -->
-        <div class="section">
-          <div class="section-title">
-            Outreach Records <span class="count" id="outreachCount"></span>
-          </div>
-          <div class="filter-bar">
-            <label style="margin:0;">User ID</label>
-            <input id="o-filterUserId" type="number" value="1" style="width:70px;" />
-            <label style="margin:0;">Status</label>
-            <select id="o-filterStatus">
-              <option value="">All</option>
-              <option value="pending">Pending</option>
-              <option value="approved">Approved</option>
-              <option value="sent">Sent</option>
-              <option value="rejected">Rejected</option>
-              <option value="failed">Failed</option>
-            </select>
-            <button id="btnRefreshOutreach" class="sm">Refresh</button>
-          </div>
-          <div id="outreachList"></div>
-        </div>
-      </div>
 
       <!-- ═══════ COMPANIES TAB ═══════ -->
       <div class="panel" id="panel-companies">
@@ -273,7 +272,6 @@
 
     <script>
       const BASE = `${location.protocol}//${location.host}`;
-      document.getElementById("baseUrl").textContent = BASE;
 
       // ── Helpers ──
 
@@ -333,7 +331,7 @@
       // ── Collapsibles ──
 
       document.querySelectorAll(".collapsible-toggle").forEach(el => {
-        const label = el.textContent.replace(/^[+-]\s*/, "").trim();
+        const label = el.textContent.trim().replace(/^[+-]\s*/, "").trim();
         el.addEventListener("click", () => {
           const body = el.nextElementSibling;
           const open = body.classList.toggle("open");
@@ -575,13 +573,30 @@
             html += `<button class="sm primary" onclick="event.stopPropagation();outreachAction(${o.id},'send')">Send</button>`;
             html += `<button class="sm danger" onclick="event.stopPropagation();outreachAction(${o.id},'reject')">Reject</button>`;
           }
+          if (o.status !== "sent") {
+            html += `<button class="sm" onclick="event.stopPropagation();toggleEdit(${o.id})">Edit</button>`;
+          }
 
           html += `</td></tr>`;
 
-          // Expandable body row
+          // Expandable body row (read-only view + edit form)
           html += `<tr class="expand-row" id="expand-${o.id}" style="display:none;">`;
-          html += `<td colspan="5" style="padding:8px 8px 8px 28px;background:var(--bg-subtle);white-space:pre-wrap;font-size:12px;">`;
+          html += `<td colspan="5" style="padding:8px 8px 8px 28px;background:var(--bg-subtle);font-size:12px;">`;
+          html += `<div id="view-${o.id}" style="white-space:pre-wrap;">`;
           html += `<strong>To:</strong> ${esc(o.email)}\n<strong>Subject:</strong> ${esc(o.message_subject)}\n\n${esc(o.message_body)}`;
+          html += `</div>`;
+          if (o.status !== "sent") {
+            html += `<div id="editForm-${o.id}" style="display:none;margin-top:8px;">`;
+            html += `<div style="display:grid;gap:6px;">`;
+            html += `<div><label>To Email</label><input id="edit-email-${o.id}" value="${esc(o.email)}" /></div>`;
+            html += `<div><label>Subject</label><input id="edit-subject-${o.id}" value="${esc(o.message_subject)}" /></div>`;
+            html += `<div><label>Body</label><textarea id="edit-body-${o.id}" rows="6" style="min-height:120px;">${esc(o.message_body)}</textarea></div>`;
+            html += `</div>`;
+            html += `<div class="btn-row" style="margin-top:6px;">`;
+            html += `<button class="sm primary" onclick="saveEdit(${o.id})">Save</button>`;
+            html += `<button class="sm" onclick="cancelEdit(${o.id})">Cancel</button>`;
+            html += `</div></div>`;
+          }
           html += `</td></tr>`;
         });
 
@@ -607,6 +622,47 @@
           loadOutreach();
         } else {
           toast(`${action} failed: ${r.data?.detail || r.status}`, false);
+        }
+      };
+
+      window.toggleEdit = function(id) {
+        const expandRow = document.getElementById(`expand-${id}`);
+        const editForm = document.getElementById(`editForm-${id}`);
+        const viewDiv = document.getElementById(`view-${id}`);
+        if (!editForm) return;
+        const isEditing = editForm.style.display !== "none";
+        if (isEditing) {
+          editForm.style.display = "none";
+          viewDiv.style.display = "";
+        } else {
+          expandRow.style.display = "table-row";
+          viewDiv.style.display = "none";
+          editForm.style.display = "";
+        }
+      };
+
+      window.cancelEdit = function(id) {
+        const editForm = document.getElementById(`editForm-${id}`);
+        const viewDiv = document.getElementById(`view-${id}`);
+        editForm.style.display = "none";
+        viewDiv.style.display = "";
+      };
+
+      window.saveEdit = async function(id) {
+        const email = document.getElementById(`edit-email-${id}`).value.trim();
+        const subject = document.getElementById(`edit-subject-${id}`).value.trim();
+        const body = document.getElementById(`edit-body-${id}`).value;
+        if (!email || !subject) { toast("Email and subject are required", false); return; }
+        const r = await api(`/outreach/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ to_email: email, subject, body }),
+        });
+        if (r.ok) {
+          toast(`Draft #${id} updated`);
+          loadOutreach();
+        } else {
+          toast(`Save failed: ${r.data?.detail || r.status}`, false);
         }
       };
 

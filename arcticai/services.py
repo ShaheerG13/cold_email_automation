@@ -509,6 +509,21 @@ async def list_outreach(*, db: AsyncSession, user_id: int) -> list[Outreach]:
     return list(res.scalars().all())
 
 
+async def update_outreach(*, db: AsyncSession, outreach_id: int, to_email: str | None, subject: str | None, body: str | None) -> Outreach | None:
+    o = await db.get(Outreach, outreach_id)
+    if not o:
+        return None
+    if to_email is not None:
+        o.email = to_email
+    if subject is not None:
+        o.message_subject = subject
+    if body is not None:
+        o.message_body = body
+    await db.commit()
+    await db.refresh(o)
+    return o
+
+
 async def set_outreach_status(*, db: AsyncSession, outreach_id: int, status: str) -> Outreach | None:
     o = await db.get(Outreach, outreach_id)
     if not o:

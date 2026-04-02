@@ -18,10 +18,11 @@ from arcticai.schemas import (
     OutreachCreateRequest,
     OutreachListResponse,
     OutreachResponse,
+    OutreachUpdateRequest,
     PipelineRunRequest,
     PipelineRunResponse,
 )
-from arcticai.services import create_outreach, list_outreach, run_pipeline, send_outreach, set_outreach_status
+from arcticai.services import create_outreach, list_outreach, run_pipeline, send_outreach, set_outreach_status, update_outreach
 
 
 def create_app() -> FastAPI:
@@ -128,6 +129,13 @@ def create_app() -> FastAPI:
                 for o in items
             ]
         )
+
+    @app.patch("/outreach/{outreach_id}", response_model=OutreachResponse)
+    async def outreach_update(outreach_id: int, payload: OutreachUpdateRequest, db: AsyncSession = Depends(get_db)) -> OutreachResponse:
+        o = await update_outreach(db=db, outreach_id=outreach_id, to_email=payload.to_email, subject=payload.subject, body=payload.body)
+        if not o:
+            raise HTTPException(status_code=404, detail="Outreach not found")
+        return OutreachResponse(id=o.id, user_id=o.user_id, company_id=o.company_id, email=o.email, message_subject=o.message_subject, message_body=o.message_body, status=o.status)
 
     @app.post("/outreach/{outreach_id}/approve", response_model=OutreachActionResponse)
     async def outreach_approve(outreach_id: int, db: AsyncSession = Depends(get_db)) -> OutreachActionResponse:
