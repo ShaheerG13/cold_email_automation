@@ -41,6 +41,20 @@ class PipelineRunResponse(BaseModel):
     items: list[PipelineResultItem]
 
 
+class EmailAccountCreate(BaseModel):
+    user_id: int
+    label: str
+    sendgrid_api_key: str
+    from_email: str
+
+
+class EmailAccountOut(BaseModel):
+    id: int
+    user_id: int
+    label: str
+    from_email: str
+
+
 class OutreachCreateRequest(BaseModel):
     user_id: int
     company_name: str
@@ -48,6 +62,7 @@ class OutreachCreateRequest(BaseModel):
     to_email: str
     subject: str
     body: str
+    from_account_id: int | None = None
 
 
 class OutreachResponse(BaseModel):
@@ -58,6 +73,7 @@ class OutreachResponse(BaseModel):
     message_subject: str
     message_body: str
     status: str
+    from_account_id: int | None = None
 
 
 class OutreachActionResponse(BaseModel):

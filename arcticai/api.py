@@ -14,6 +14,8 @@ from arcticai.models import Base, Company
 from arcticai.schemas import (
     CompanyCreate,
     CompanyOut,
+    EmailAccountCreate,
+    EmailAccountOut,
     OutreachActionResponse,
     OutreachCreateRequest,
     OutreachListResponse,
@@ -22,7 +24,7 @@ from arcticai.schemas import (
     PipelineRunRequest,
     PipelineRunResponse,
 )
-from arcticai.services import create_outreach, list_outreach, run_pipeline, send_outreach, set_outreach_status, update_outreach
+from arcticai.services import create_email_account, create_outreach, delete_email_account, list_email_accounts, list_outreach, run_pipeline, send_outreach, set_outreach_status, update_outreach
 
 
 def create_app() -> FastAPI:
@@ -101,6 +103,7 @@ def create_app() -> FastAPI:
             to_email=payload.to_email,
             subject=payload.subject,
             body=payload.body,
+            from_account_id=payload.from_account_id,
         )
         return OutreachResponse(
             id=o.id,
@@ -110,6 +113,7 @@ def create_app() -> FastAPI:
             message_subject=o.message_subject,
             message_body=o.message_body,
             status=o.status,
+            from_account_id=o.from_account_id,
         )
 
     @app.get("/outreach", response_model=OutreachListResponse)
@@ -125,6 +129,7 @@ def create_app() -> FastAPI:
                     message_subject=o.message_subject,
                     message_body=o.message_body,
                     status=o.status,
+                    from_account_id=o.from_account_id,
                 )
                 for o in items
             ]
@@ -135,7 +140,7 @@ def create_app() -> FastAPI:
         o = await update_outreach(db=db, outreach_id=outreach_id, to_email=payload.to_email, subject=payload.subject, body=payload.body)
         if not o:
             raise HTTPException(status_code=404, detail="Outreach not found")
-        return OutreachResponse(id=o.id, user_id=o.user_id, company_id=o.company_id, email=o.email, message_subject=o.message_subject, message_body=o.message_body, status=o.status)
+        return OutreachResponse(id=o.id, user_id=o.user_id, company_id=o.company_id, email=o.email, message_subject=o.message_subject, message_body=o.message_body, status=o.status, from_account_id=o.from_account_id)
 
     @app.post("/outreach/{outreach_id}/approve", response_model=OutreachActionResponse)
     async def outreach_approve(outreach_id: int, db: AsyncSession = Depends(get_db)) -> OutreachActionResponse:
@@ -165,6 +170,24 @@ def create_app() -> FastAPI:
         if outcome != "sent":
             raise HTTPException(status_code=500, detail="Failed to send")
         return OutreachActionResponse(id=o.id, status=o.status, detail="sent")
+
+    # Email accounts
+    @app.get("/email-accounts", response_model=list[EmailAccountOut])
+    async def email_accounts_list(user_id: int = Query(...), db: AsyncSession = Depends(get_db)) -> list[EmailAccountOut]:
+        items = await list_email_accounts(db=db, user_id=user_id)
+        return [EmailAccountOut(id=a.id, user_id=a.user_id, label=a.label, from_email=a.from_email) for a in items]
+
+    @app.post("/email-accounts", response_model=EmailAccountOut)
+    async def email_accounts_create(payload: EmailAccountCreate, db: AsyncSession = Depends(get_db)) -> EmailAccountOut:
+        a = await create_email_account(db=db, user_id=payload.user_id, label=payload.label, sendgrid_api_key=payload.sendgrid_api_key, from_email=payload.from_email)
+        return EmailAccountOut(id=a.id, user_id=a.user_id, label=a.label, from_email=a.from_email)
+
+    @app.delete("/email-accounts/{account_id}")
+    async def email_accounts_delete(account_id: int, db: AsyncSession = Depends(get_db)) -> dict:
+        ok = await delete_email_account(db=db, account_id=account_id)
+        if not ok:
+            raise HTTPException(status_code=404, detail="Email account not found")
+        return {"deleted": True}
 
     return app
 

@@ -42,12 +42,25 @@ class Contact(Base):
     company: Mapped[Company] = relationship(backref="contacts")
 
 
+class EmailAccount(Base):
+    __tablename__ = "email_accounts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    label: Mapped[str] = mapped_column(String(200), default="")
+    sendgrid_api_key: Mapped[str] = mapped_column(String(200), default="")
+    from_email: Mapped[str] = mapped_column(String(320), default="")
+
+    user: Mapped[User] = relationship(backref="email_accounts")
+
+
 class Outreach(Base):
     __tablename__ = "outreach"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), index=True)
+    from_account_id: Mapped[int | None] = mapped_column(ForeignKey("email_accounts.id", ondelete="SET NULL"), nullable=True, default=None)
 
     email: Mapped[str] = mapped_column(String(320))
     message_subject: Mapped[str] = mapped_column(String(300))
@@ -56,4 +69,5 @@ class Outreach(Base):
 
     user: Mapped[User] = relationship(backref="outreach")
     company: Mapped[Company] = relationship(backref="outreach")
+    from_account: Mapped[EmailAccount | None] = relationship()
 
