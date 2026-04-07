@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep:*)",
+      "WebSearch",
+      "Bash(venv/Scripts/pip install:*)",
+      "Bash(DATABASE_URL=postgresql+asyncpg://localhost/test venv/Scripts/python -c \"from arcticai.api import app; from alembic.config import Config; print\\('all imports ok'\\)\")",
+      "Bash(DATABASE_URL=postgresql+asyncpg://localhost/test venv/Scripts/python -c \"from arcticai.api import app; print\\('imports ok'\\)\")"
+    ]
+  }
+}

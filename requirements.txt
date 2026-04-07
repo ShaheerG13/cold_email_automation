@@ -1,10 +1,10 @@
 fastapi
 uvicorn[standard]
-pydantic
+pydantic[email]
 sqlalchemy
-aiosqlite
 asyncpg
+supabase
 redis
 httpx
 python-dotenv
-
+alembic

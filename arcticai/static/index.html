@@ -164,31 +164,6 @@
       <!-- ═══════ OUTREACH TAB ═══════ -->
       <div class="panel" id="panel-outreach">
 
-        <!-- Email Accounts (collapsible) -->
-        <div class="section">
-          <div class="section-title collapsible-toggle" id="toggleEmailAccounts">+ Email Accounts</div>
-          <div class="collapsible-body" id="emailAccountsBody">
-            <div id="emailAccountsList" style="margin-bottom:10px;"></div>
-            <div class="form-grid" style="margin-top:6px;">
-              <div>
-                <label>Label</label>
-                <input id="ea-label" placeholder="e.g. Work Gmail" />
-              </div>
-              <div>
-                <label>From Email</label>
-                <input id="ea-fromEmail" type="email" placeholder="you@example.com" />
-              </div>
-              <div class="span-2">
-                <label>SendGrid API Key</label>
-                <input id="ea-apiKey" type="password" placeholder="SG.xxxxxxx" />
-              </div>
-            </div>
-            <div class="btn-row">
-              <button class="primary sm" id="btnAddEmailAccount">Add Account</button>
-            </div>
-          </div>
-        </div>
-
         <!-- Outreach list -->
         <div class="section">
           <div class="section-title">
@@ -221,12 +196,6 @@
                 <input id="o-userId" type="number" value="1" />
               </div>
               <div>
-                <label>Send from</label>
-                <select id="o-fromAccount">
-                  <option value="">Default (env config)</option>
-                </select>
-              </div>
-              <div>
                 <label>Company name</label>
                 <input id="o-companyName" />
               </div>
@@ -237,9 +206,6 @@
               <div>
                 <label>Recipient email</label>
                 <input id="o-toEmail" type="email" />
-              </div>
-              <div>
-                <label>&nbsp;</label>
               </div>
               <div class="span-2">
                 <label>Subject</label>
@@ -305,7 +271,7 @@
     </div>
 
     <script>
-      const BASE = `${location.protocol}//${location.host}`;
+      const BASE = `${location.protocol}//${location.host}/api/v1`;
 
       // ── Helpers ──
 
@@ -525,77 +491,9 @@
         if (tab === "companies") loadCompanies();
       }
 
-      // ═══════ EMAIL ACCOUNTS ═══════
-
-      let emailAccountsCache = [];
-
-      async function loadEmailAccounts() {
-        const userId = Number(document.getElementById("o-filterUserId").value);
-        const r = await api(`/email-accounts?user_id=${encodeURIComponent(userId)}`);
-        emailAccountsCache = r.ok ? (r.data || []) : [];
-
-        // Render list
-        const container = document.getElementById("emailAccountsList");
-        if (!emailAccountsCache.length) {
-          container.innerHTML = '<div class="muted">No email accounts configured. Add one below or emails will use the server default.</div>';
-        } else {
-          let html = '<table class="tbl"><thead><tr><th>Label</th><th>From Email</th><th></th></tr></thead><tbody>';
-          emailAccountsCache.forEach(a => {
-            html += `<tr>`;
-            html += `<td>${esc(a.label)}</td>`;
-            html += `<td class="mono">${esc(a.from_email)}</td>`;
-            html += `<td><button class="sm danger" onclick="deleteEmailAccount(${a.id})">Remove</button></td>`;
-            html += `</tr>`;
-          });
-          html += '</tbody></table>';
-          container.innerHTML = html;
-        }
-
-        // Update dropdowns
-        const select = document.getElementById("o-fromAccount");
-        const prev = select.value;
-        select.innerHTML = '<option value="">Default (env config)</option>';
-        emailAccountsCache.forEach(a => {
-          select.innerHTML += `<option value="${a.id}">${esc(a.label)} (${esc(a.from_email)})</option>`;
-        });
-        select.value = prev;
-      }
-
-      document.getElementById("btnAddEmailAccount").onclick = async () => {
-        const userId = Number(document.getElementById("o-filterUserId").value);
-        const label = document.getElementById("ea-label").value.trim();
-        const fromEmail = document.getElementById("ea-fromEmail").value.trim();
-        const apiKey = document.getElementById("ea-apiKey").value.trim();
-        if (!label || !fromEmail || !apiKey) {
-          toast("Fill in all email account fields", false);
-          return;
-        }
-        const r = await postJson("/email-accounts", { user_id: userId, label, from_email: fromEmail, sendgrid_api_key: apiKey });
-        if (r.ok) {
-          toast(`Email account "${label}" added`);
-          document.getElementById("ea-label").value = "";
-          document.getElementById("ea-fromEmail").value = "";
-          document.getElementById("ea-apiKey").value = "";
-          loadEmailAccounts();
-        } else {
-          toast(`Failed: ${r.data?.detail || r.status}`, false);
-        }
-      };
-
-      window.deleteEmailAccount = async function(id) {
-        const r = await api(`/email-accounts/${id}`, { method: "DELETE" });
-        if (r.ok) {
-          toast("Account removed");
-          loadEmailAccounts();
-        } else {
-          toast(`Failed: ${r.data?.detail || r.status}`, false);
-        }
-      };
-
       // ═══════ OUTREACH ═══════
 
       document.getElementById("btnCreateDraft").onclick = async () => {
-        const fromAccountId = document.getElementById("o-fromAccount").value;
         const body = {
           user_id: Number(document.getElementById("o-userId").value),
           company_name: document.getElementById("o-companyName").value,
@@ -603,7 +501,6 @@
           to_email: document.getElementById("o-toEmail").value,
           subject: document.getElementById("o-subject").value,
           body: document.getElementById("o-body").value,
-          from_account_id: fromAccountId ? Number(fromAccountId) : null,
         };
 
         if (!body.company_name || !body.to_email || !body.subject) {
@@ -634,7 +531,6 @@
       document.getElementById("btnRefreshOutreach").onclick = () => loadOutreach();
 
       async function loadOutreach() {
-        loadEmailAccounts();
         const userId = Number(document.getElementById("o-filterUserId").value);
         const statusFilter = document.getElementById("o-filterStatus").value;
         const container = document.getElementById("outreachList");
@@ -657,19 +553,13 @@
           return;
         }
 
-        // Build account id->label lookup
-        const acctMap = {};
-        emailAccountsCache.forEach(a => { acctMap[a.id] = a.label || a.from_email; });
-
         let html = `<table class="tbl"><thead><tr>
-          <th>ID</th><th>From</th><th>Email</th><th>Subject</th><th>Status</th><th>Actions</th>
+          <th>ID</th><th>Email</th><th>Subject</th><th>Status</th><th>Actions</th>
         </tr></thead><tbody>`;
 
         items.forEach(o => {
-          const fromLabel = o.from_account_id ? esc(acctMap[o.from_account_id] || `#${o.from_account_id}`) : '<span class="muted">default</span>';
           html += `<tr class="clickable" data-oid="${o.id}">`;
           html += `<td class="mono">${o.id}</td>`;
-          html += `<td>${fromLabel}</td>`;
           html += `<td class="mono">${esc(o.email)}</td>`;
           html += `<td>${esc(o.message_subject)}</td>`;
           html += `<td>${badge(o.status)}</td>`;
@@ -691,7 +581,7 @@
 
           // Expandable body row (read-only view + edit form)
           html += `<tr class="expand-row" id="expand-${o.id}" style="display:none;">`;
-          html += `<td colspan="6" style="padding:8px 8px 8px 28px;background:var(--bg-subtle);font-size:12px;">`;
+          html += `<td colspan="5" style="padding:8px 8px 8px 28px;background:var(--bg-subtle);font-size:12px;">`;
           html += `<div id="view-${o.id}" style="white-space:pre-wrap;">`;
           html += `<strong>To:</strong> ${esc(o.email)}\n<strong>Subject:</strong> ${esc(o.message_subject)}\n\n${esc(o.message_body)}`;
           html += `</div>`;

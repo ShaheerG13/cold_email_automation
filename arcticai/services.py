@@ -9,7 +9,7 @@ from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from arcticai.models import Company, EmailAccount, Outreach
+from arcticai.models import Company, Outreach
 from arcticai.schemas import CompanyCandidate, ContactCandidate, EmailDraft, PipelineResultItem
 
 
@@ -486,30 +486,8 @@ async def run_pipeline(*, location: str, field: str, experience: str, target_rol
     return items
 
 
-async def create_email_account(*, db: AsyncSession, user_id: int, label: str, sendgrid_api_key: str, from_email: str) -> EmailAccount:
-    acct = EmailAccount(user_id=user_id, label=label, sendgrid_api_key=sendgrid_api_key, from_email=from_email)
-    db.add(acct)
-    await db.commit()
-    await db.refresh(acct)
-    return acct
-
-
-async def list_email_accounts(*, db: AsyncSession, user_id: int) -> list[EmailAccount]:
-    res = await db.execute(select(EmailAccount).where(EmailAccount.user_id == user_id).order_by(EmailAccount.id))
-    return list(res.scalars().all())
-
-
-async def delete_email_account(*, db: AsyncSession, account_id: int) -> bool:
-    acct = await db.get(EmailAccount, account_id)
-    if not acct:
-        return False
-    await db.delete(acct)
-    await db.commit()
-    return True
-
-
-async def create_outreach(*, db: AsyncSession, user_id: int, company_name: str, company_website: str | None, to_email: str, subject: str, body: str, from_account_id: int | None = None) -> Outreach:
-    company = Company(name=company_name, website=company_website)
+async def create_outreach(*, db: AsyncSession, user_id: int, company_name: str, company_website: str | None, to_email: str, subject: str, body: str) -> Outreach:
+    company = Company(user_id=user_id, name=company_name, website=company_website)
     db.add(company)
     await db.flush()
     outreach = Outreach(
@@ -519,7 +497,6 @@ async def create_outreach(*, db: AsyncSession, user_id: int, company_name: str, 
         message_subject=subject,
         message_body=body,
         status="pending",
-        from_account_id=from_account_id,
     )
     db.add(outreach)
     await db.commit()
@@ -557,9 +534,9 @@ async def set_outreach_status(*, db: AsyncSession, outreach_id: int, status: str
     return o
 
 
-async def send_email_sendgrid(*, to_email: str, subject: str, body: str, api_key: str | None = None, from_email: str | None = None) -> None:
-    api_key = (api_key or "").strip() or os.getenv("SENDGRID_API_KEY", "").strip()
-    from_email = (from_email or "").strip() or os.getenv("SENDGRID_FROM_EMAIL", "").strip()
+async def send_email_sendgrid(*, to_email: str, subject: str, body: str) -> None:
+    api_key = os.getenv("SENDGRID_API_KEY", "").strip()
+    from_email = os.getenv("SENDGRID_FROM_EMAIL", "").strip()
     if not api_key or not from_email:
         raise RuntimeError("SendGrid not configured (need SENDGRID_API_KEY and SENDGRID_FROM_EMAIL)")
 
@@ -587,22 +564,11 @@ async def send_outreach(*, db: AsyncSession, outreach_id: int) -> tuple[Outreach
     except Exception:
         return o, "rate_limited"
 
-    # Resolve sender credentials from the selected email account (if any)
-    acct_api_key: str | None = None
-    acct_from_email: str | None = None
-    if o.from_account_id:
-        acct = await db.get(EmailAccount, o.from_account_id)
-        if acct:
-            acct_api_key = acct.sendgrid_api_key
-            acct_from_email = acct.from_email
-
     try:
         await send_email_sendgrid(
             to_email=o.email,
             subject=o.message_subject,
             body=o.message_body,
-            api_key=acct_api_key,
-            from_email=acct_from_email,
         )
     except Exception as e:
         msg = str(e).lower()
