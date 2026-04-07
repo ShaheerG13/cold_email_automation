@@ -117,11 +117,13 @@ def rate_limit(action: str, default_limit: int):
         limit = default_limit * multiplier
         try:
             await enforce_daily_limit(key=f"user:{user.id}:{action}", max_per_day=limit)
-        except Exception:
+        except RuntimeError:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail=f"Daily limit exceeded for {action} ({limit}/day on {user.tier} tier)",
             )
+        except Exception:
+            pass  # Redis unavailable — allow request through
         return user
 
     return Depends(_check)

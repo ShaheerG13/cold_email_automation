@@ -15,8 +15,12 @@ from arcticai.models import Base  # noqa: E402
 
 config = context.config
 
-# Override sqlalchemy.url from env var
-config.set_main_option("sqlalchemy.url", os.getenv("DATABASE_URL", ""))
+# Override sqlalchemy.url from env var (convert Supabase postgresql:// to asyncpg)
+_db_url = os.getenv("DATABASE_URL", "")
+if _db_url.startswith("postgresql://"):
+    _db_url = _db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+# Escape % for configparser interpolation
+config.set_main_option("sqlalchemy.url", _db_url.replace("%", "%%"))
 
 target_metadata = Base.metadata
 

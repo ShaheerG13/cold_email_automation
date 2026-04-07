@@ -534,11 +534,10 @@ async def set_outreach_status(*, db: AsyncSession, outreach_id: int, status: str
     return o
 
 
-async def send_email_sendgrid(*, to_email: str, subject: str, body: str) -> None:
+async def send_email_sendgrid(*, to_email: str, subject: str, body: str, from_email: str) -> None:
     api_key = os.getenv("SENDGRID_API_KEY", "").strip()
-    from_email = os.getenv("SENDGRID_FROM_EMAIL", "").strip()
-    if not api_key or not from_email:
-        raise RuntimeError("SendGrid not configured (need SENDGRID_API_KEY and SENDGRID_FROM_EMAIL)")
+    if not api_key:
+        raise RuntimeError("SendGrid not configured (need SENDGRID_API_KEY)")
 
     payload = {
         "personalizations": [{"to": [{"email": to_email}]}],
@@ -553,7 +552,7 @@ async def send_email_sendgrid(*, to_email: str, subject: str, body: str) -> None
             raise RuntimeError(f"SendGrid error: {r.status_code} {r.text}")
 
 
-async def send_outreach(*, db: AsyncSession, outreach_id: int) -> tuple[Outreach | None, str]:
+async def send_outreach(*, db: AsyncSession, outreach_id: int, sender_email: str) -> tuple[Outreach | None, str]:
     o = await db.get(Outreach, outreach_id)
     if not o:
         return None, "not_found"
@@ -569,6 +568,7 @@ async def send_outreach(*, db: AsyncSession, outreach_id: int) -> tuple[Outreach
             to_email=o.email,
             subject=o.message_subject,
             body=o.message_body,
+            from_email=sender_email,
         )
     except Exception as e:
         msg = str(e).lower()

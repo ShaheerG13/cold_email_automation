@@ -187,7 +187,7 @@ async def outreach_reject(outreach_id: int, user: User = Depends(require_verifie
 @router.post("/outreach/{outreach_id}/send", response_model=OutreachActionResponse)
 async def outreach_send(outreach_id: int, user: User = Depends(require_verified), db: AsyncSession = Depends(get_db), _rl: User = rate_limit("outreach_send", 10)) -> OutreachActionResponse:
     await _get_outreach_owned(outreach_id, user, db)
-    o, outcome = await send_outreach(db=db, outreach_id=outreach_id)
+    o, outcome = await send_outreach(db=db, outreach_id=outreach_id, sender_email=user.email)
     if o is None:
         raise HTTPException(status_code=404, detail="Outreach not found")
     if outcome == "not_approved":

@@ -5,7 +5,23 @@
       "WebSearch",
       "Bash(venv/Scripts/pip install:*)",
       "Bash(DATABASE_URL=postgresql+asyncpg://localhost/test venv/Scripts/python -c \"from arcticai.api import app; from alembic.config import Config; print\\('all imports ok'\\)\")",
-      "Bash(DATABASE_URL=postgresql+asyncpg://localhost/test venv/Scripts/python -c \"from arcticai.api import app; print\\('imports ok'\\)\")"
+      "Bash(DATABASE_URL=postgresql+asyncpg://localhost/test venv/Scripts/python -c \"from arcticai.api import app; print\\('imports ok'\\)\")",
+      "Bash(venv/Scripts/alembic revision:*)",
+      "Bash(python:*)",
+      "Bash(pip install:*)",
+      "Bash(alembic revision:*)",
+      "Bash(pip show:*)",
+      "Bash(curl -s -w ' [%{http_code}]' __TRACKED_VAR__/auth/me)",
+      "Bash(curl -s -w ' [%{http_code}]' __TRACKED_VAR__/auth/me -H 'Authorization: Bearer bad')",
+      "Bash(curl -s -w ' [%{http_code}]' __TRACKED_VAR__/auth/me -H 'Authorization: Bearer __TRACKED_VAR__')",
+      "Bash(curl -s -w ' [%{http_code}]' -X POST __TRACKED_VAR__/companies -H 'Authorization: Bearer __TRACKED_VAR__' -H 'Content-Type: application/json' -d '{\"name\":\"Test Corp\",\"website\":\"https://test.com\",\"location\":\"SF\",\"field\":\"SaaS\",\"about\":\"Testing\"}')",
+      "Bash(curl -s -w ' [%{http_code}]' __TRACKED_VAR__/companies -H 'Authorization: Bearer __TRACKED_VAR__')",
+      "Bash(curl -s -w ' [%{http_code}]' -X PATCH __TRACKED_VAR__/outreach/1 -H 'Authorization: Bearer __TRACKED_VAR__' -H 'Content-Type: application/json' -d '{\"subject\":\"Updated Subject\",\"body\":\"Updated body content.\"}')",
+      "Bash(curl -s -w ' [%{http_code}]' -X POST __TRACKED_VAR__/outreach/1/approve -H 'Authorization: Bearer __TRACKED_VAR__')",
+      "Bash(curl -s -w ' [%{http_code}]' -X POST __TRACKED_VAR__/outreach/999/approve -H 'Authorization: Bearer __TRACKED_VAR__')",
+      "Bash(curl -s __TRACKED_VAR__/outreach -H 'Authorization: Bearer __TRACKED_VAR__')",
+      "Bash(curl -s __TRACKED_VAR__/auth/me -H 'Authorization: Bearer __TRACKED_VAR__')",
+      "Bash(curl -s __TRACKED_VAR__/companies -H 'Authorization: Bearer __TRACKED_VAR__')"
     ]
   }
 }
