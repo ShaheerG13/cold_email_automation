@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import re
+import smtplib
 import time
+from concurrent.futures import ThreadPoolExecutor
 
+import dns.resolver
 import httpx
 from redis.asyncio import Redis
 from sqlalchemy import select
@@ -34,7 +38,26 @@ async def enforce_daily_limit(*, key: str, max_per_day: int) -> None:
         raise RuntimeError("Daily send limit exceeded")
 
 
+async def serper_search(*, query: str, num: int = 10) -> list[dict]:
+    """Search via Serper.dev — returns Google results.
+
+    2,500 free queries (no CC), then $1/1k pay-as-you-go.
+    """
+    api_key = os.getenv("SERPER_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError("SERPER_API_KEY not set")
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.post(
+            "https://google.serper.dev/search",
+            headers={"X-API-KEY": api_key, "Content-Type": "application/json"},
+            json={"q": query, "num": num},
+        )
+        r.raise_for_status()
+        return r.json().get("organic") or []
+
+
 async def serpapi_search(*, query: str, num: int = 10) -> list[dict]:
+    """Legacy: SerpAPI search. Kept as fallback."""
     api_key = os.getenv("SERPAPI_API_KEY", "").strip()
     if not api_key:
         raise RuntimeError("SERPAPI_API_KEY not set")
@@ -42,7 +65,15 @@ async def serpapi_search(*, query: str, num: int = 10) -> list[dict]:
     async with httpx.AsyncClient(timeout=30) as client:
         r = await client.get("https://serpapi.com/search.json", params=params)
         r.raise_for_status()
-        return (r.json().get("organic_results") or [])
+        return r.json().get("organic_results") or []
+
+
+async def web_search(*, query: str, num: int = 10) -> list[dict]:
+    """Unified search: tries Serper first, falls back to SerpAPI."""
+    try:
+        return await serper_search(query=query, num=num)
+    except RuntimeError:
+        return await serpapi_search(query=query, num=num)
 
 
 _AGGREGATOR_DOMAINS: frozenset[str] = frozenset({
@@ -269,7 +300,7 @@ def _domain_to_homepage(domain: str) -> str:
 async def _resolve_name_to_homepage(name: str, field: str) -> str | None:
     """Individual company search (num=3) to find a specific company's homepage."""
     try:
-        results = await serpapi_search(query=f'"{name}" {field} company', num=3)
+        results = await web_search(query=f'"{name}" {field} company', num=3)
     except Exception:
         return None
     for r in results:
@@ -283,7 +314,7 @@ async def find_companies(*, location: str, field: str) -> list[CompanyCandidate]
     kw = f"{field} {location}"
     query = _DISCOVERY_QUERY.format(field=field, location=location)
     try:
-        results = await serpapi_search(query=query, num=10)
+        results = await web_search(query=query, num=10)
     except Exception:
         return [CompanyCandidate(name="Example", website="https://example.com",
                                  about=None, keywords=[kw])]
@@ -394,6 +425,159 @@ async def hunter_domain_search(*, domain: str) -> list[dict]:
     return entries
 
 
+# ── DIY email finder (replaces Hunter.io) ──
+
+_EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
+_JUNK_EXTENSIONS = frozenset({"png", "jpg", "jpeg", "gif", "svg", "css", "js", "woff", "woff2", "ttf", "webp"})
+_CONTACT_PATHS = ("/contact", "/contact-us", "/about", "/about-us", "/team", "/our-team")
+
+_GENERIC_LOCALS = [
+    ("info", "General Contact"),
+    ("contact", "General Contact"),
+    ("hello", "General Contact"),
+    ("team", "General Contact"),
+    ("hiring", "Hiring"),
+    ("careers", "Hiring"),
+    ("jobs", "Hiring"),
+    ("hr", "HR"),
+    ("talent", "Hiring"),
+    ("admin", "Admin"),
+    ("office", "Office"),
+    ("sales", "Sales"),
+]
+
+_smtp_pool = ThreadPoolExecutor(max_workers=4)
+
+
+def _guess_role_from_local(local: str) -> str:
+    low = local.lower()
+    for pattern, role in _GENERIC_LOCALS:
+        if pattern == low:
+            return role
+    if low in ("ceo", "founder", "president"):
+        return "CEO / Founder"
+    if low in ("cto", "vp.engineering"):
+        return "CTO"
+    return ""
+
+
+async def _fetch_page(client: httpx.AsyncClient, url: str) -> str:
+    """Fetch a single page, return HTML or empty string on failure."""
+    try:
+        r = await client.get(url)
+        return r.text if r.status_code == 200 else ""
+    except Exception:
+        return ""
+
+
+async def scrape_site_emails(domain: str) -> list[dict]:
+    """Fetch a company's homepage + contact pages and extract email addresses."""
+    found: dict[str, str] = {}  # email -> guessed role
+    urls = [f"https://{domain}"] + [f"https://{domain}{p}" for p in _CONTACT_PATHS]
+
+    async with httpx.AsyncClient(
+        timeout=6, follow_redirects=True,
+        headers={"User-Agent": "Mozilla/5.0 (compatible; ArcticAI/1.0)"},
+    ) as client:
+        # Fetch all pages in parallel
+        pages = await asyncio.gather(*(_fetch_page(client, u) for u in urls))
+        for html in pages:
+            if not html:
+                continue
+            for raw in _EMAIL_RE.findall(html):
+                email = raw.lower()
+                ext = email.rsplit(".", 1)[-1]
+                if ext in _JUNK_EXTENSIONS:
+                    continue
+                if email.endswith(f"@{domain}") or email.endswith(f"@www.{domain}"):
+                    local = email.split("@")[0]
+                    if email not in found:
+                        found[email] = _guess_role_from_local(local)
+
+    return [{"email": e, "position": role, "department": ""} for e, role in found.items()]
+
+
+def _smtp_verify_sync(email: str) -> bool:
+    """Synchronous SMTP RCPT TO check — runs in thread pool."""
+    domain = email.split("@")[1]
+    try:
+        answers = dns.resolver.resolve(domain, "MX")
+        mx_host = str(sorted(answers, key=lambda r: r.preference)[0].exchange).rstrip(".")
+    except Exception:
+        return False
+    try:
+        with smtplib.SMTP(mx_host, 25, timeout=5) as srv:
+            srv.ehlo("arcticai.com")
+            srv.mail("noreply@arcticai.com")
+            code, _ = srv.rcpt(email)
+            return code == 250
+    except Exception:
+        return False
+
+
+async def smtp_verify(email: str) -> bool:
+    """Async wrapper around SMTP verification."""
+    loop = asyncio.get_event_loop()
+    try:
+        return await asyncio.wait_for(
+            loop.run_in_executor(_smtp_pool, _smtp_verify_sync, email), timeout=8,
+        )
+    except (asyncio.TimeoutError, Exception):
+        return False
+
+
+async def diy_domain_search(*, domain: str) -> list[dict]:
+    """Free replacement for hunter_domain_search.
+
+    1. Scrape the company website for visible email addresses.
+    2. Generate common pattern emails (info@, hiring@, etc.).
+    3. Best-effort SMTP verification to filter invalid addresses.
+
+    Returns same shape as hunter_domain_search: list of {email, position, department}.
+    """
+    # Step 1: scrape
+    scraped = await scrape_site_emails(domain)
+
+    # Step 2: generate common patterns (skip if already found via scraping)
+    scraped_addrs = {e["email"] for e in scraped}
+    patterns = []
+    for local, role in _GENERIC_LOCALS:
+        addr = f"{local}@{domain}"
+        if addr not in scraped_addrs:
+            patterns.append({"email": addr, "position": role, "department": ""})
+
+    # Step 3: SMTP-verify everything in parallel (best-effort)
+    all_candidates = scraped + patterns
+    if all_candidates:
+        checks = await asyncio.gather(
+            *(smtp_verify(e["email"]) for e in all_candidates),
+            return_exceptions=True,
+        )
+        verified = [e for e, ok in zip(all_candidates, checks) if ok is True]
+        # If SMTP verification worked for at least some, prefer verified results
+        if verified:
+            return verified
+
+    # Fallback: return scraped emails (trusted) + top patterns (unverified)
+    return scraped if scraped else patterns[:5]
+
+
+_JUNK_LOCALS = frozenset({"noreply", "no-reply", "donotreply", "do-not-reply", "mailer-daemon", "postmaster"})
+
+
+async def find_emails(*, domain: str) -> list[dict]:
+    """Unified email finder: Hunter primary, DIY fallback."""
+    try:
+        results = await hunter_domain_search(domain=domain)
+        # Filter out useless addresses like noreply@
+        results = [e for e in results if e.get("email", "").split("@")[0].lower() not in _JUNK_LOCALS]
+        if results:
+            return results
+    except Exception:
+        pass
+    return await diy_domain_search(domain=domain)
+
+
 async def find_relevant_emails(company: CompanyCandidate) -> list[ContactCandidate]:
     if not company.website:
         return []
@@ -401,7 +585,7 @@ async def find_relevant_emails(company: CompanyCandidate) -> list[ContactCandida
     if not domain or "." not in domain:
         return []
     try:
-        entries = await hunter_domain_search(domain=domain)
+        entries = await find_emails(domain=domain)
     except Exception:
         entries = []
     ceo_like: list[ContactCandidate] = []
