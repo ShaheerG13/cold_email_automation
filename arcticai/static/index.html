@@ -34,13 +34,19 @@
       .auth-container .form-group label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 3px; }
       .auth-container .form-group input { width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border); background: transparent; font-size: 14px; font-family: inherit; }
       .auth-container .form-group input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+      .pw-wrap { position: relative; }
+      .pw-wrap input { padding-right: 36px; }
+      .pw-toggle { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: none; border: none; padding: 2px; cursor: pointer; opacity: 0.5; font-size: 16px; line-height: 1; }
+      .pw-toggle:hover { opacity: 0.8; }
       .auth-container .auth-btn { width: 100%; padding: 10px; border-radius: 6px; border: none; background: var(--accent); color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 6px; }
       .auth-container .auth-btn:hover { opacity: 0.9; }
       .auth-container .auth-btn:disabled { opacity: 0.5; cursor: default; }
       .auth-container .auth-link { font-size: 13px; margin-top: 12px; text-align: center; }
       .auth-container .auth-link a { color: var(--accent); cursor: pointer; text-decoration: underline; }
-      .auth-container .auth-error { color: rgba(255,80,80,.9); font-size: 13px; margin-top: 8px; display: none; }
-      .auth-container .auth-success { color: rgba(50,180,80,.9); font-size: 13px; margin-top: 8px; display: none; }
+      .auth-container .auth-error { color: rgba(255,80,80,.9); font-size: 13px; margin-top: 8px; }
+      .auth-container .auth-error:empty { display: none; }
+      .auth-container .auth-success { color: rgba(50,180,80,.9); font-size: 13px; margin-top: 8px; }
+      .auth-container .auth-success:empty { display: none; }
 
       /* Verification banner */
       .verify-banner { background: rgba(255,180,0,.12); border: 1px solid rgba(255,180,0,.3); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; font-size: 13px; display: flex; align-items: center; gap: 10px; }
@@ -142,7 +148,10 @@
         </div>
         <div class="form-group">
           <label>Password</label>
-          <input type="password" id="login-password" />
+          <div class="pw-wrap">
+            <input type="password" id="login-password" />
+            <button type="button" class="pw-toggle" data-target="login-password" title="Show password">&#128065;</button>
+          </div>
         </div>
         <button class="auth-btn" id="btnLogin">Log In</button>
         <div class="auth-error" id="login-error"></div>
@@ -168,13 +177,36 @@
         </div>
         <div class="form-group">
           <label>Password</label>
-          <input type="password" id="signup-password" placeholder="Min 6 characters" />
+          <div class="pw-wrap">
+            <input type="password" id="signup-password" placeholder="Min 8 characters" />
+            <button type="button" class="pw-toggle" data-target="signup-password" data-group="signup" title="Show password">&#128065;</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Confirm Password</label>
+          <div class="pw-wrap">
+            <input type="password" id="signup-confirm" placeholder="Re-enter password" />
+            <button type="button" class="pw-toggle" data-target="signup-confirm" data-group="signup" title="Show password">&#128065;</button>
+          </div>
         </div>
         <button class="auth-btn" id="btnSignup">Sign Up</button>
         <div class="auth-error" id="signup-error"></div>
         <div class="auth-success" id="signup-success"></div>
         <div class="auth-link">
           Already have an account? <a id="showLogin">Log in</a>
+        </div>
+      </div>
+
+      <!-- Verification sent -->
+      <div id="auth-verify-sent" class="auth-container" style="display:none;">
+        <h2>Check Your Email</h2>
+        <p class="subtitle">We sent a verification link to <strong id="verify-sent-email"></strong></p>
+        <p style="font-size:13px;line-height:1.5;">Click the link in the email to verify your account, then come back here and log in.</p>
+        <button class="auth-btn" id="btnResendSignupVerify" style="background:var(--bg-subtle);color:inherit;border:1px solid var(--border);">Resend Verification Email</button>
+        <div class="auth-success" id="verify-sent-success"></div>
+        <div class="auth-error" id="verify-sent-error"></div>
+        <div class="auth-link" style="margin-top:16px;">
+          <a id="showLoginFromVerify">Back to login</a>
         </div>
       </div>
 
@@ -372,6 +404,7 @@
       let sb = null;
       let accessToken = null;
       let currentUser = null; // from /auth/me
+      let signupEmail = ''; // track for resend verification
 
       async function initSupabase() {
         const r = await fetch(`${BASE}/config`);
@@ -470,15 +503,18 @@
       }
 
       function showAuthPanel(name) {
-        ['auth-login', 'auth-signup', 'auth-forgot'].forEach(id => {
+        ['auth-login', 'auth-signup', 'auth-forgot', 'auth-verify-sent'].forEach(id => {
           document.getElementById(id).style.display = 'none';
         });
         document.getElementById(`auth-${name}`).style.display = '';
-        // Clear errors/success
+        // Clear errors/success (empty textContent triggers :empty CSS to hide them)
         document.querySelectorAll('.auth-error, .auth-success').forEach(el => {
-          el.style.display = 'none';
           el.textContent = '';
         });
+        // Populate verify-sent email if switching to that panel
+        if (name === 'verify-sent' && signupEmail) {
+          document.getElementById('verify-sent-email').textContent = signupEmail;
+        }
       }
 
       async function showApp() {
@@ -504,11 +540,10 @@
         const email = document.getElementById('login-email').value.trim();
         const password = document.getElementById('login-password').value;
         const errEl = document.getElementById('login-error');
-        errEl.style.display = 'none';
+        errEl.textContent = '';
 
         if (!email || !password) {
           errEl.textContent = 'Email and password are required';
-          errEl.style.display = '';
           return;
         }
 
@@ -519,7 +554,6 @@
 
         if (error) {
           errEl.textContent = error.message;
-          errEl.style.display = '';
         }
         // Success handled by onAuthStateChange
       };
@@ -538,19 +572,22 @@
         const name = document.getElementById('signup-name').value.trim();
         const email = document.getElementById('signup-email').value.trim();
         const password = document.getElementById('signup-password').value;
+        const confirm = document.getElementById('signup-confirm').value;
         const errEl = document.getElementById('signup-error');
         const successEl = document.getElementById('signup-success');
-        errEl.style.display = 'none';
-        successEl.style.display = 'none';
+        errEl.textContent = '';
+        successEl.textContent = '';
 
         if (!email || !password) {
           errEl.textContent = 'Email and password are required';
-          errEl.style.display = '';
           return;
         }
-        if (password.length < 6) {
-          errEl.textContent = 'Password must be at least 6 characters';
-          errEl.style.display = '';
+        if (password.length < 8) {
+          errEl.textContent = 'Password must be at least 8 characters';
+          return;
+        }
+        if (password !== confirm) {
+          errEl.textContent = 'Passwords do not match';
           return;
         }
 
@@ -565,16 +602,22 @@
 
         if (error) {
           errEl.textContent = error.message;
-          errEl.style.display = '';
+          return;
+        }
+
+        // Supabase returns a fake user with no session when email already exists
+        // (to avoid leaking whether an email is registered). Detect this:
+        if (data.user && data.user.identities && data.user.identities.length === 0) {
+          errEl.textContent = 'An account with this email already exists. Try logging in.';
           return;
         }
 
         // Supabase may auto-confirm or require email verification
-        if (data.user && !data.user.email_confirmed_at && !data.session) {
-          successEl.textContent = 'Account created! Check your email for a verification link.';
-          successEl.style.display = '';
-        }
-        // If session exists, onAuthStateChange will handle it
+        if (data.session) return; // auto-confirmed — onAuthStateChange handles it
+
+        // Show "check your email" screen
+        signupEmail = email;
+        showAuthPanel('verify-sent');
       };
 
       document.getElementById('signup-password').addEventListener('keydown', e => {
@@ -587,12 +630,11 @@
         const email = document.getElementById('forgot-email').value.trim();
         const errEl = document.getElementById('forgot-error');
         const successEl = document.getElementById('forgot-success');
-        errEl.style.display = 'none';
-        successEl.style.display = 'none';
+        errEl.textContent = '';
+        successEl.textContent = '';
 
         if (!email) {
           errEl.textContent = 'Enter your email';
-          errEl.style.display = '';
           return;
         }
 
@@ -603,7 +645,6 @@
 
         if (error) {
           errEl.textContent = error.message;
-          errEl.style.display = '';
           return;
         }
         successEl.textContent = 'If that email is registered, a reset link has been sent.';
@@ -616,6 +657,21 @@
       document.getElementById('showLogin').onclick = () => showAuthPanel('login');
       document.getElementById('showForgot').onclick = () => showAuthPanel('forgot');
       document.getElementById('showLoginFromForgot').onclick = () => showAuthPanel('login');
+      document.getElementById('showLoginFromVerify').onclick = () => showAuthPanel('login');
+
+      document.getElementById('btnResendSignupVerify').onclick = async () => {
+        if (!signupEmail) return;
+        const errEl = document.getElementById('verify-sent-error');
+        const successEl = document.getElementById('verify-sent-success');
+        errEl.textContent = '';
+        successEl.textContent = '';
+        const { error } = await sb.auth.resend({ type: 'signup', email: signupEmail });
+        if (error) {
+          errEl.textContent = error.message;
+        } else {
+          successEl.textContent = 'Verification email resent. Check your inbox.';
+        }
+      };
 
       // ── Auth: Logout ──
 
@@ -646,6 +702,30 @@
           document.getElementById(`panel-${t.dataset.tab}`).classList.add('active');
           if (t.dataset.tab === 'outreach') loadOutreach();
           if (t.dataset.tab === 'companies') loadCompanies();
+        });
+      });
+
+      // ── Password visibility toggles ──
+
+      document.querySelectorAll('.pw-toggle').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const input = document.getElementById(btn.dataset.target);
+          if (!input) return;
+          const showing = input.type === 'text';
+          const newType = showing ? 'password' : 'text';
+
+          // If this is a signup password field, toggle both together
+          const group = btn.dataset.group;
+          if (group) {
+            document.querySelectorAll(`.pw-toggle[data-group="${group}"]`).forEach(b => {
+              const inp = document.getElementById(b.dataset.target);
+              if (inp) inp.type = newType;
+              b.style.opacity = showing ? '0.5' : '0.9';
+            });
+          } else {
+            input.type = newType;
+            btn.style.opacity = showing ? '0.5' : '0.9';
+          }
         });
       });
 
