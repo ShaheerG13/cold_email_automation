@@ -1,33 +1,43 @@
 from __future__ import annotations
 
+import logging
 import os
+import uuid
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, Depends, FastAPI, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.middleware.base import BaseHTTPMiddleware
 
-from arcticai.auth import get_current_user, rate_limit, require_verified
+logger = logging.getLogger("arcticai")
+
+from arcticai.auth import get_current_user, get_supabase, rate_limit, require_verified
 from arcticai.db import get_db
 from arcticai.models import Company, Outreach, User
 from arcticai.schemas import (
     CompanyCreate,
     CompanyOut,
+    FindEmailsRequest,
+    ForgotPasswordRequest,
+    MessageResponse,
     OutreachActionResponse,
     OutreachCreateRequest,
     OutreachListResponse,
     OutreachResponse,
     OutreachUpdateRequest,
+    PipelineResultItem,
     PipelineRunRequest,
     PipelineRunResponse,
     UserOut,
 )
 from arcticai.services import (
     create_outreach,
+    enrich_company_emails,
     list_outreach,
     run_pipeline,
     send_outreach,
@@ -46,6 +56,17 @@ async def _get_outreach_owned(outreach_id: int, user: User, db: AsyncSession) ->
     return o
 
 
+# ── Config (public, no auth) ──
+
+@router.get("/config")
+async def config():
+    """Return public Supabase config for the frontend."""
+    return {
+        "supabase_url": os.getenv("SUPABASE_URL", ""),
+        "supabase_anon_key": os.getenv("SUPABASE_ANON_KEY", ""),
+    }
+
+
 # ── Auth ──
 
 @router.get("/auth/me", response_model=UserOut)
@@ -59,6 +80,17 @@ async def auth_me(user: User = Depends(get_current_user)) -> UserOut:
     )
 
 
+@router.post("/auth/forgot-password", response_model=MessageResponse)
+async def forgot_password(payload: ForgotPasswordRequest) -> MessageResponse:
+    """Send a password-reset email via Supabase Auth."""
+    try:
+        sb = get_supabase()
+        sb.auth.reset_password_email(payload.email)
+    except Exception:
+        pass  # Don't reveal whether the email exists
+    return MessageResponse(message="If that email is registered, a reset link has been sent.")
+
+
 # ── Search ──
 
 @router.post("/search", response_model=PipelineRunResponse)
@@ -70,6 +102,17 @@ async def search(req: PipelineRunRequest, user: User = Depends(require_verified)
         target_roles=req.target_roles,
     )
     return PipelineRunResponse(items=items)
+
+
+@router.post("/find-emails", response_model=PipelineResultItem)
+async def find_emails(req: FindEmailsRequest, user: User = Depends(require_verified), _rl: User = rate_limit("find_emails", 25)) -> PipelineResultItem:
+    """Find contact emails + generate email draft for a single company."""
+    return await enrich_company_emails(
+        company_name=req.company_name,
+        company_website=req.company_website,
+        field=req.field,
+        experience=req.experience,
+    )
 
 
 # ── Companies ──
@@ -201,11 +244,56 @@ async def outreach_send(outreach_id: int, user: User = Depends(require_verified)
     return OutreachActionResponse(id=o.id, status=o.status, detail="sent")
 
 
+# ── Middleware ──
+
+
+class RequestIDMiddleware(BaseHTTPMiddleware):
+    """Attach a unique request ID to every request and log request/response."""
+
+    async def dispatch(self, request: Request, call_next):
+        request_id = uuid.uuid4().hex[:12]
+        request.state.request_id = request_id
+
+        logger.info(
+            "request_start",
+            extra={"request_id": request_id, "method": request.method, "path": request.url.path},
+        )
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        logger.info(
+            "request_end",
+            extra={"request_id": request_id, "status": response.status_code},
+        )
+        return response
+
+
+# ── Logging setup ──
+
+
+def _configure_logging() -> None:
+    """Set up structured JSON-ish logging for the app."""
+    handler = logging.StreamHandler()
+    fmt = logging.Formatter(
+        "%(asctime)s %(levelname)s %(name)s [%(request_id)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        defaults={"request_id": "-"},
+    )
+    handler.setFormatter(fmt)
+    root = logging.getLogger("arcticai")
+    root.handlers.clear()
+    root.addHandler(handler)
+    root.setLevel(logging.INFO)
+
+
 # ── App factory ──
 
 def create_app() -> FastAPI:
     load_dotenv()
-    app = FastAPI(title="ArcticAI", version="0.3.0")
+    _configure_logging()
+    app = FastAPI(title="ArcticAI", version="0.4.0")
+
+    # Middleware (order matters — first added = outermost)
+    app.add_middleware(RequestIDMiddleware)
 
     # CORS
     origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:8000").split(",")

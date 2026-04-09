@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import re
 import smtplib
@@ -15,6 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from arcticai.models import Company, Outreach
 from arcticai.schemas import CompanyCandidate, ContactCandidate, EmailDraft, PipelineResultItem
+
+logger = logging.getLogger("arcticai.services")
 
 
 def _redis() -> Redis | None:
@@ -71,9 +74,13 @@ async def serpapi_search(*, query: str, num: int = 10) -> list[dict]:
 async def web_search(*, query: str, num: int = 10) -> list[dict]:
     """Unified search: tries Serper first, falls back to SerpAPI."""
     try:
-        return await serper_search(query=query, num=num)
+        results = await serper_search(query=query, num=num)
+        logger.info("search provider=serper results=%d query=%s", len(results), query[:80])
+        return results
     except RuntimeError:
-        return await serpapi_search(query=query, num=num)
+        results = await serpapi_search(query=query, num=num)
+        logger.info("search provider=serpapi results=%d query=%s", len(results), query[:80])
+        return results
 
 
 _AGGREGATOR_DOMAINS: frozenset[str] = frozenset({
@@ -655,19 +662,26 @@ Constraints:
 
 
 async def run_pipeline(*, location: str, field: str, experience: str, target_roles: list[str]) -> list[PipelineResultItem]:
+    """Search for companies only. Email finding + draft generation are separate (find-emails endpoint)."""
     companies = await find_companies(location=location, field=field)
     items: list[PipelineResultItem] = []
     for c in companies:
         enriched = await enrich_company(c)
-        contacts = await find_relevant_emails(enriched)
-        draft = await generate_email_draft(
-            user_experience=experience,
-            target_field=field,
-            company_name=enriched.name,
-            company_about=enriched.about or "",
-        )
-        items.append(PipelineResultItem(company=enriched, contacts=contacts, draft=draft))
+        items.append(PipelineResultItem(company=enriched, contacts=[], draft=None))
     return items
+
+
+async def enrich_company_emails(*, company_name: str, company_website: str, field: str, experience: str) -> PipelineResultItem:
+    """Find emails + generate draft for a single company. Called when user clicks 'Find Emails'."""
+    candidate = CompanyCandidate(name=company_name, website=company_website)
+    contacts = await find_relevant_emails(candidate)
+    draft = await generate_email_draft(
+        user_experience=experience,
+        target_field=field,
+        company_name=company_name,
+        company_about="",
+    )
+    return PipelineResultItem(company=candidate, contacts=contacts, draft=draft)
 
 
 async def create_outreach(*, db: AsyncSession, user_id: int, company_name: str, company_website: str | None, to_email: str, subject: str, body: str) -> Outreach:
@@ -733,7 +747,9 @@ async def send_email_sendgrid(*, to_email: str, subject: str, body: str, from_em
     async with httpx.AsyncClient(timeout=30) as client:
         r = await client.post("https://api.sendgrid.com/v3/mail/send", headers=headers, json=payload)
         if r.status_code >= 400:
+            logger.error("sendgrid_error status=%d to=%s from=%s", r.status_code, to_email, from_email)
             raise RuntimeError(f"SendGrid error: {r.status_code} {r.text}")
+    logger.info("email_sent to=%s from=%s subject=%s", to_email, from_email, subject[:60])
 
 
 async def send_outreach(*, db: AsyncSession, outreach_id: int, sender_email: str) -> tuple[Outreach | None, str]:

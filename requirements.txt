@@ -8,3 +8,7 @@ redis
 httpx
 python-dotenv
 alembic
+# Testing
+pytest
+pytest-asyncio
+aiosqlite

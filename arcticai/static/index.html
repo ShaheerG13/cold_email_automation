@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ArcticAI</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
       :root { color-scheme: light dark; --accent: rgba(70,140,255,.8); --accent-bg: rgba(70,140,255,.15); --border: rgba(128,128,128,.3); --bg-subtle: rgba(128,128,128,.06); }
       * { box-sizing: border-box; }
@@ -16,11 +17,34 @@
       .tab { padding: 6px 16px; border-radius: 6px; border: none; background: transparent; cursor: pointer; font-size: 13px; font-weight: 500; opacity: 0.7; }
       .tab.active { background: var(--accent-bg); opacity: 1; color: var(--accent); }
       .tab:hover { opacity: 1; }
+      .user-info { margin-left: auto; display: flex; align-items: center; gap: 10px; font-size: 13px; }
+      .user-info .email { opacity: 0.7; }
+      .user-info .tier-badge { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--accent-bg); color: var(--accent); text-transform: uppercase; }
 
       /* Main */
       .main { padding: 16px 20px; max-width: 1100px; }
       .panel { display: none; }
       .panel.active { display: block; }
+
+      /* Auth screens */
+      .auth-container { max-width: 380px; margin: 60px auto; padding: 0 20px; }
+      .auth-container h2 { font-size: 20px; margin: 0 0 4px 0; }
+      .auth-container .subtitle { font-size: 13px; opacity: 0.6; margin-bottom: 16px; }
+      .auth-container .form-group { margin-bottom: 10px; }
+      .auth-container .form-group label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 3px; }
+      .auth-container .form-group input { width: 100%; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border); background: transparent; font-size: 14px; font-family: inherit; }
+      .auth-container .form-group input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+      .auth-container .auth-btn { width: 100%; padding: 10px; border-radius: 6px; border: none; background: var(--accent); color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 6px; }
+      .auth-container .auth-btn:hover { opacity: 0.9; }
+      .auth-container .auth-btn:disabled { opacity: 0.5; cursor: default; }
+      .auth-container .auth-link { font-size: 13px; margin-top: 12px; text-align: center; }
+      .auth-container .auth-link a { color: var(--accent); cursor: pointer; text-decoration: underline; }
+      .auth-container .auth-error { color: rgba(255,80,80,.9); font-size: 13px; margin-top: 8px; display: none; }
+      .auth-container .auth-success { color: rgba(50,180,80,.9); font-size: 13px; margin-top: 8px; display: none; }
+
+      /* Verification banner */
+      .verify-banner { background: rgba(255,180,0,.12); border: 1px solid rgba(255,180,0,.3); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; font-size: 13px; display: flex; align-items: center; gap: 10px; }
+      .verify-banner button { flex-shrink: 0; }
 
       /* Forms */
       .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
@@ -63,8 +87,6 @@
 
       /* Cards */
       .card { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 8px; }
-      .card.selectable { cursor: pointer; }
-      .card.selectable:hover, .card.selected { border-color: var(--accent); background: var(--accent-bg); }
 
       /* Sections */
       .section { margin-bottom: 20px; }
@@ -86,10 +108,6 @@
       .toast-err { background: rgba(255,80,80,.12); border: 1px solid rgba(255,80,80,.4); }
       @keyframes toast-in { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:translateY(0); } }
 
-      /* Expand row */
-      .expand-body { padding: 8px 8px 8px 28px; border-bottom: 1px solid var(--border); background: var(--bg-subtle); white-space: pre-wrap; font-size: 12px; font-family: inherit; display: none; }
-      .expand-body.open { display: table-row; }
-
       /* Contact list in search results */
       .contact-row { font-size: 12px; padding: 2px 0; display: flex; gap: 6px; align-items: center; }
       .contact-email { font-family: ui-monospace, monospace; }
@@ -97,9 +115,7 @@
 
       /* Filter bar */
       .filter-bar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
-      .filter-bar select, .filter-bar input { width: auto; padding: 3px; }
-      .filter-bar select { background: #fff; color: #000; }
-      
+      .filter-bar select { width: auto; padding: 3px; }
 
       /* Collapsible */
       .collapsible-toggle { cursor: pointer; user-select: none; }
@@ -113,174 +129,300 @@
   <body>
     <div class="toast-container" id="toasts"></div>
 
-    <div class="header">
-      <h1>ArcticAI</h1>
-      <div class="tabs">
-        <button class="tab active" data-tab="search">Search</button>
-        <button class="tab" data-tab="outreach">Outreach</button>
-        <button class="tab" data-tab="companies">Companies</button>
+    <!-- ═══════ AUTH SCREENS ═══════ -->
+
+    <div id="auth-screen" style="display:none;">
+      <!-- Login -->
+      <div id="auth-login" class="auth-container">
+        <h2>Welcome to ArcticAI</h2>
+        <p class="subtitle">Cold email automation for job seekers</p>
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="login-email" />
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="login-password" />
+        </div>
+        <button class="auth-btn" id="btnLogin">Log In</button>
+        <div class="auth-error" id="login-error"></div>
+        <div class="auth-link">
+          Don't have an account? <a id="showSignup">Sign up</a>
+        </div>
+        <div class="auth-link">
+          <a id="showForgot">Forgot password?</a>
+        </div>
+      </div>
+
+      <!-- Signup -->
+      <div id="auth-signup" class="auth-container" style="display:none;">
+        <h2>Create Account</h2>
+        <p class="subtitle">Sign up to start automating your outreach</p>
+        <div class="form-group">
+          <label>Name</label>
+          <input type="text" id="signup-name" />
+        </div>
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="signup-email" />
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="signup-password" placeholder="Min 6 characters" />
+        </div>
+        <button class="auth-btn" id="btnSignup">Sign Up</button>
+        <div class="auth-error" id="signup-error"></div>
+        <div class="auth-success" id="signup-success"></div>
+        <div class="auth-link">
+          Already have an account? <a id="showLogin">Log in</a>
+        </div>
+      </div>
+
+      <!-- Forgot password -->
+      <div id="auth-forgot" class="auth-container" style="display:none;">
+        <h2>Reset Password</h2>
+        <p class="subtitle">Enter your email to receive a reset link</p>
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="forgot-email" />
+        </div>
+        <button class="auth-btn" id="btnForgot">Send Reset Link</button>
+        <div class="auth-error" id="forgot-error"></div>
+        <div class="auth-success" id="forgot-success"></div>
+        <div class="auth-link">
+          <a id="showLoginFromForgot">Back to login</a>
+        </div>
       </div>
     </div>
 
-    <div class="main">
+    <!-- ═══════ MAIN APP (shown when logged in) ═══════ -->
 
-      <!-- ═══════ SEARCH TAB ═══════ -->
-      <div class="panel active" id="panel-search">
-        <div class="section">
-          <div class="form-grid">
-            <div>
-              <label>Location</label>
-              <input id="s-location" value="Leesburg, VA" />
-            </div>
-            <div>
-              <label>Field</label>
-              <input id="s-field" value="cybersecurity" />
-            </div>
-            <div class="span-2">
-              <label>Experience</label>
-              <textarea id="s-experience" rows="2">Built vulnerability scanner using Flask and ML</textarea>
-            </div>
-            <div>
-              <label>Target roles (comma-separated)</label>
-              <input id="s-roles" value="intern,junior" />
-            </div>
-            <div>
-              <label>&nbsp;</label>
-              <div class="btn-row" style="margin-top:0;">
-                <button class="primary" id="btnRunSearch">Run Search</button>
-                <button id="btnClearResults">Clear</button>
-              </div>
-            </div>
-          </div>
-          <div class="spinner" id="searchSpinner">
-            <div class="spin-ring"></div>
-            <span>Searching for companies&hellip; this may take a minute</span>
-          </div>
+    <div id="app-screen" style="display:none;">
+      <div class="header">
+        <h1>ArcticAI</h1>
+        <div class="tabs">
+          <button class="tab active" data-tab="search">Search</button>
+          <button class="tab" data-tab="outreach">Outreach</button>
+          <button class="tab" data-tab="companies">Companies</button>
         </div>
-
-        <div id="searchResults"></div>
-      </div>
-
-      <!-- ═══════ OUTREACH TAB ═══════ -->
-      <div class="panel" id="panel-outreach">
-
-        <!-- Outreach list -->
-        <div class="section">
-          <div class="section-title">
-            Outreach Records <span class="count" id="outreachCount"></span>
-          </div>
-          <div class="filter-bar">
-            <label style="margin:0;">User ID</label>
-            <input id="o-filterUserId" type="number" value="1" style="width:70px;" />
-            <label style="margin:0;">Status</label>
-            <select id="o-filterStatus">
-              <option value="">All</option>
-              <option value="pending">Pending</option>
-              <option value="approved">Approved</option>
-              <option value="sent">Sent</option>
-              <option value="rejected">Rejected</option>
-              <option value="failed">Failed</option>
-            </select>
-            <button id="btnRefreshOutreach" class="sm">Refresh</button>
-          </div>
-          <div id="outreachList"></div>
-        </div>
-
-       <!-- New draft form (collapsible) -->
-        <div class="section">
-          <div class="section-title collapsible-toggle" id="toggleDraftForm" data-label="New Draft">+ New Draft</div>
-          <div class="collapsible-body" id="draftFormBody">
-            <div class="form-grid" style="margin-top:6px;">
-              <div>
-                <label>User ID</label>
-                <input id="o-userId" type="number" value="1" />
-              </div>
-              <div>
-                <label>Company name</label>
-                <input id="o-companyName" />
-              </div>
-              <div>
-                <label>Company website</label>
-                <input id="o-companyWebsite" placeholder="https://..." />
-              </div>
-              <div>
-                <label>Recipient email</label>
-                <input id="o-toEmail" type="email" />
-              </div>
-              <div class="span-2">
-                <label>Subject</label>
-                <input id="o-subject" />
-              </div>
-              <div class="span-2">
-                <label>Body</label>
-                <textarea id="o-body" rows="5"></textarea>
-              </div>
-            </div>
-            <div class="btn-row">
-              <button class="primary" id="btnCreateDraft">Create Draft</button>
-              <button id="btnClearDraft">Clear Form</button>
-            </div>
-          </div>
+        <div class="user-info">
+          <span class="tier-badge" id="userTier"></span>
+          <span class="email" id="userEmail"></span>
+          <button class="sm" id="btnLogout">Log out</button>
         </div>
       </div>
 
-      <!-- ═══════ COMPANIES TAB ═══════ -->
-      <div class="panel" id="panel-companies">
-        <div class="section">
-          <div class="section-title">
-            Saved Companies <span class="count" id="companyCount"></span>
-            <button class="sm" id="btnRefreshCompanies" style="margin-left:auto;">Refresh</button>
-          </div>
-          <div id="companyList"></div>
+      <div class="main">
+
+        <!-- Verification banner (shown if email not verified) -->
+        <div class="verify-banner" id="verifyBanner" style="display:none;">
+          <span>Your email is not verified. Please check your inbox for a verification link.</span>
+          <button class="sm" id="btnResendVerify">Resend</button>
         </div>
 
-        <div class="section">
-          <div class="section-title collapsible-toggle" id="toggleCompanyForm">
-            + Add Company
-          </div>
-          <div class="collapsible-body" id="companyFormBody">
-            <div class="form-grid cols-3" style="margin-top:6px;">
-              <div>
-                <label>Name</label>
-                <input id="c-name" />
-              </div>
-              <div>
-                <label>Website</label>
-                <input id="c-website" placeholder="https://..." />
-              </div>
+        <!-- ═══════ SEARCH TAB ═══════ -->
+        <div class="panel active" id="panel-search">
+          <div class="section">
+            <div class="form-grid">
               <div>
                 <label>Location</label>
-                <input id="c-location" />
+                <input id="s-location" value="Leesburg, VA" />
               </div>
               <div>
                 <label>Field</label>
-                <input id="c-field" />
+                <input id="s-field" value="cybersecurity" />
               </div>
               <div class="span-2">
-                <label>About</label>
-                <input id="c-about" />
+                <label>Experience</label>
+                <textarea id="s-experience" rows="2">Built vulnerability scanner using Flask and ML</textarea>
+              </div>
+              <div>
+                <label>Target roles (comma-separated)</label>
+                <input id="s-roles" value="intern,junior" />
+              </div>
+              <div>
+                <label>&nbsp;</label>
+                <div class="btn-row" style="margin-top:0;">
+                  <button class="primary" id="btnRunSearch">Run Search</button>
+                  <button id="btnClearResults">Clear</button>
+                </div>
               </div>
             </div>
-            <div class="btn-row">
-              <button class="primary" id="btnAddCompany">Add Company</button>
+            <div class="spinner" id="searchSpinner">
+              <div class="spin-ring"></div>
+              <span>Searching for companies&hellip; this may take a minute</span>
+            </div>
+          </div>
+
+          <div id="searchResults"></div>
+        </div>
+
+        <!-- ═══════ OUTREACH TAB ═══════ -->
+        <div class="panel" id="panel-outreach">
+
+          <div class="section">
+            <div class="section-title">
+              Outreach Records <span class="count" id="outreachCount"></span>
+            </div>
+            <div class="filter-bar">
+              <label style="margin:0;">Status</label>
+              <select id="o-filterStatus">
+                <option value="">All</option>
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="sent">Sent</option>
+                <option value="rejected">Rejected</option>
+                <option value="failed">Failed</option>
+              </select>
+              <button id="btnRefreshOutreach" class="sm">Refresh</button>
+            </div>
+            <div id="outreachList"></div>
+          </div>
+
+          <!-- New draft form (collapsible) -->
+          <div class="section">
+            <div class="section-title collapsible-toggle" id="toggleDraftForm">+ New Draft</div>
+            <div class="collapsible-body" id="draftFormBody">
+              <div class="form-grid" style="margin-top:6px;">
+                <div>
+                  <label>Company name</label>
+                  <input id="o-companyName" />
+                </div>
+                <div>
+                  <label>Company website</label>
+                  <input id="o-companyWebsite" placeholder="https://..." />
+                </div>
+                <div>
+                  <label>Recipient email</label>
+                  <input id="o-toEmail" type="email" />
+                </div>
+                <div>
+                  <label>&nbsp;</label>
+                </div>
+                <div class="span-2">
+                  <label>Subject</label>
+                  <input id="o-subject" />
+                </div>
+                <div class="span-2">
+                  <label>Body</label>
+                  <textarea id="o-body" rows="5"></textarea>
+                </div>
+              </div>
+              <div class="btn-row">
+                <button class="primary" id="btnCreateDraft">Create Draft</button>
+                <button id="btnClearDraft">Clear Form</button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
+        <!-- ═══════ COMPANIES TAB ═══════ -->
+        <div class="panel" id="panel-companies">
+          <div class="section">
+            <div class="section-title">
+              Saved Companies <span class="count" id="companyCount"></span>
+              <button class="sm" id="btnRefreshCompanies" style="margin-left:auto;">Refresh</button>
+            </div>
+            <div id="companyList"></div>
+          </div>
+
+          <div class="section">
+            <div class="section-title collapsible-toggle" id="toggleCompanyForm">+ Add Company</div>
+            <div class="collapsible-body" id="companyFormBody">
+              <div class="form-grid cols-3" style="margin-top:6px;">
+                <div>
+                  <label>Name</label>
+                  <input id="c-name" />
+                </div>
+                <div>
+                  <label>Website</label>
+                  <input id="c-website" placeholder="https://..." />
+                </div>
+                <div>
+                  <label>Location</label>
+                  <input id="c-location" />
+                </div>
+                <div>
+                  <label>Field</label>
+                  <input id="c-field" />
+                </div>
+                <div class="span-2">
+                  <label>About</label>
+                  <input id="c-about" />
+                </div>
+              </div>
+              <div class="btn-row">
+                <button class="primary" id="btnAddCompany">Add Company</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
     </div>
 
     <script>
+    (async function() {
+      'use strict';
+
       const BASE = `${location.protocol}//${location.host}/api/v1`;
+
+      // ── Supabase init ──
+
+      let sb = null;
+      let accessToken = null;
+      let currentUser = null; // from /auth/me
+
+      async function initSupabase() {
+        const r = await fetch(`${BASE}/config`);
+        const cfg = await r.json();
+        if (!cfg.supabase_url || !cfg.supabase_anon_key) {
+          console.error('Supabase config missing');
+          return;
+        }
+        sb = supabase.createClient(cfg.supabase_url, cfg.supabase_anon_key);
+
+        // Listen for auth changes (login, logout, token refresh)
+        sb.auth.onAuthStateChange((event, session) => {
+          accessToken = session?.access_token || null;
+          if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+            showApp();
+          } else if (event === 'SIGNED_OUT') {
+            showAuth();
+          }
+        });
+
+        // Check existing session
+        const { data: { session } } = await sb.auth.getSession();
+        if (session) {
+          accessToken = session.access_token;
+          showApp();
+        } else {
+          showAuth();
+        }
+      }
 
       // ── Helpers ──
 
+      function authHeaders() {
+        const h = { 'Content-Type': 'application/json' };
+        if (accessToken) h['Authorization'] = `Bearer ${accessToken}`;
+        return h;
+      }
+
       async function api(path, opts = {}) {
+        if (!opts.headers) opts.headers = authHeaders();
         try {
           const res = await fetch(`${BASE}${path}`, opts);
           const text = await res.text();
           let data = null;
           try { data = JSON.parse(text); } catch { data = text; }
+          if (res.status === 401) {
+            // Token expired or invalid — sign out
+            if (sb) await sb.auth.signOut();
+            showAuth();
+            return { ok: false, status: 401, data };
+          }
           return { ok: res.ok, status: res.status, data };
         } catch (e) {
           return { ok: false, status: 0, data: e.message };
@@ -288,54 +430,233 @@
       }
 
       function postJson(path, body) {
-        return api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        return api(path, { method: 'POST', headers: authHeaders(), body: JSON.stringify(body) });
+      }
+
+      function patchJson(path, body) {
+        return api(path, { method: 'PATCH', headers: authHeaders(), body: JSON.stringify(body) });
       }
 
       function toast(msg, ok = true) {
-        const el = document.createElement("div");
-        el.className = `toast ${ok ? "toast-ok" : "toast-err"}`;
+        const el = document.createElement('div');
+        el.className = `toast ${ok ? 'toast-ok' : 'toast-err'}`;
         el.textContent = msg;
-        document.getElementById("toasts").appendChild(el);
+        document.getElementById('toasts').appendChild(el);
         setTimeout(() => el.remove(), 3500);
       }
 
       function badge(status) {
         const cls = {
-          pending: "badge-pending", approved: "badge-approved",
-          sent: "badge-sent", rejected: "badge-rejected", failed: "badge-failed"
-        }[status] || "badge-pending";
+          pending: 'badge-pending', approved: 'badge-approved',
+          sent: 'badge-sent', rejected: 'badge-rejected', failed: 'badge-failed'
+        }[status] || 'badge-pending';
         return `<span class="badge ${cls}">${status}</span>`;
       }
 
       function esc(s) {
-        if (!s) return "";
-        const d = document.createElement("div");
+        if (!s) return '';
+        const d = document.createElement('div');
         d.textContent = s;
         return d.innerHTML;
       }
 
+      // ── Auth screen switching ──
+
+      function showAuth() {
+        document.getElementById('auth-screen').style.display = '';
+        document.getElementById('app-screen').style.display = 'none';
+        showAuthPanel('login');
+        currentUser = null;
+      }
+
+      function showAuthPanel(name) {
+        ['auth-login', 'auth-signup', 'auth-forgot'].forEach(id => {
+          document.getElementById(id).style.display = 'none';
+        });
+        document.getElementById(`auth-${name}`).style.display = '';
+        // Clear errors/success
+        document.querySelectorAll('.auth-error, .auth-success').forEach(el => {
+          el.style.display = 'none';
+          el.textContent = '';
+        });
+      }
+
+      async function showApp() {
+        document.getElementById('auth-screen').style.display = 'none';
+        document.getElementById('app-screen').style.display = '';
+
+        // Fetch user info from our backend
+        const r = await api('/auth/me');
+        if (!r.ok) return;
+        currentUser = r.data;
+
+        document.getElementById('userEmail').textContent = currentUser.email;
+        document.getElementById('userTier').textContent = currentUser.tier;
+
+        // Show/hide verification banner
+        const banner = document.getElementById('verifyBanner');
+        banner.style.display = currentUser.is_verified ? 'none' : 'flex';
+      }
+
+      // ── Auth: Login ──
+
+      document.getElementById('btnLogin').onclick = async () => {
+        const email = document.getElementById('login-email').value.trim();
+        const password = document.getElementById('login-password').value;
+        const errEl = document.getElementById('login-error');
+        errEl.style.display = 'none';
+
+        if (!email || !password) {
+          errEl.textContent = 'Email and password are required';
+          errEl.style.display = '';
+          return;
+        }
+
+        const btn = document.getElementById('btnLogin');
+        btn.disabled = true;
+        const { error } = await sb.auth.signInWithPassword({ email, password });
+        btn.disabled = false;
+
+        if (error) {
+          errEl.textContent = error.message;
+          errEl.style.display = '';
+        }
+        // Success handled by onAuthStateChange
+      };
+
+      // Enter key on login fields
+      document.getElementById('login-password').addEventListener('keydown', e => {
+        if (e.key === 'Enter') document.getElementById('btnLogin').click();
+      });
+      document.getElementById('login-email').addEventListener('keydown', e => {
+        if (e.key === 'Enter') document.getElementById('login-password').focus();
+      });
+
+      // ── Auth: Signup ──
+
+      document.getElementById('btnSignup').onclick = async () => {
+        const name = document.getElementById('signup-name').value.trim();
+        const email = document.getElementById('signup-email').value.trim();
+        const password = document.getElementById('signup-password').value;
+        const errEl = document.getElementById('signup-error');
+        const successEl = document.getElementById('signup-success');
+        errEl.style.display = 'none';
+        successEl.style.display = 'none';
+
+        if (!email || !password) {
+          errEl.textContent = 'Email and password are required';
+          errEl.style.display = '';
+          return;
+        }
+        if (password.length < 6) {
+          errEl.textContent = 'Password must be at least 6 characters';
+          errEl.style.display = '';
+          return;
+        }
+
+        const btn = document.getElementById('btnSignup');
+        btn.disabled = true;
+        const { data, error } = await sb.auth.signUp({
+          email,
+          password,
+          options: { data: { name } },
+        });
+        btn.disabled = false;
+
+        if (error) {
+          errEl.textContent = error.message;
+          errEl.style.display = '';
+          return;
+        }
+
+        // Supabase may auto-confirm or require email verification
+        if (data.user && !data.user.email_confirmed_at && !data.session) {
+          successEl.textContent = 'Account created! Check your email for a verification link.';
+          successEl.style.display = '';
+        }
+        // If session exists, onAuthStateChange will handle it
+      };
+
+      document.getElementById('signup-password').addEventListener('keydown', e => {
+        if (e.key === 'Enter') document.getElementById('btnSignup').click();
+      });
+
+      // ── Auth: Forgot password ──
+
+      document.getElementById('btnForgot').onclick = async () => {
+        const email = document.getElementById('forgot-email').value.trim();
+        const errEl = document.getElementById('forgot-error');
+        const successEl = document.getElementById('forgot-success');
+        errEl.style.display = 'none';
+        successEl.style.display = 'none';
+
+        if (!email) {
+          errEl.textContent = 'Enter your email';
+          errEl.style.display = '';
+          return;
+        }
+
+        const btn = document.getElementById('btnForgot');
+        btn.disabled = true;
+        const { error } = await sb.auth.resetPasswordForEmail(email);
+        btn.disabled = false;
+
+        if (error) {
+          errEl.textContent = error.message;
+          errEl.style.display = '';
+          return;
+        }
+        successEl.textContent = 'If that email is registered, a reset link has been sent.';
+        successEl.style.display = '';
+      };
+
+      // ── Auth: Navigation links ──
+
+      document.getElementById('showSignup').onclick = () => showAuthPanel('signup');
+      document.getElementById('showLogin').onclick = () => showAuthPanel('login');
+      document.getElementById('showForgot').onclick = () => showAuthPanel('forgot');
+      document.getElementById('showLoginFromForgot').onclick = () => showAuthPanel('login');
+
+      // ── Auth: Logout ──
+
+      document.getElementById('btnLogout').onclick = async () => {
+        await sb.auth.signOut();
+        showAuth();
+      };
+
+      // ── Auth: Resend verification ──
+
+      document.getElementById('btnResendVerify').onclick = async () => {
+        if (!currentUser) return;
+        const { error } = await sb.auth.resend({ type: 'signup', email: currentUser.email });
+        if (error) {
+          toast(error.message, false);
+        } else {
+          toast('Verification email resent. Check your inbox.');
+        }
+      };
+
       // ── Tabs ──
 
-      document.querySelectorAll(".tab").forEach(t => {
-        t.addEventListener("click", () => {
-          document.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
-          document.querySelectorAll(".panel").forEach(x => x.classList.remove("active"));
-          t.classList.add("active");
-          document.getElementById(`panel-${t.dataset.tab}`).classList.add("active");
-          // auto-load data
-          if (t.dataset.tab === "outreach") loadOutreach();
-          if (t.dataset.tab === "companies") loadCompanies();
+      document.querySelectorAll('.tab').forEach(t => {
+        t.addEventListener('click', () => {
+          document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+          document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
+          t.classList.add('active');
+          document.getElementById(`panel-${t.dataset.tab}`).classList.add('active');
+          if (t.dataset.tab === 'outreach') loadOutreach();
+          if (t.dataset.tab === 'companies') loadCompanies();
         });
       });
 
       // ── Collapsibles ──
 
-      document.querySelectorAll(".collapsible-toggle").forEach(el => {
-        const label = el.textContent.trim().replace(/^[+-]\s*/, "").trim();
-        el.addEventListener("click", () => {
+      document.querySelectorAll('.collapsible-toggle').forEach(el => {
+        const label = el.textContent.trim().replace(/^[+-]\s*/, '').trim();
+        el.addEventListener('click', () => {
           const body = el.nextElementSibling;
-          const open = body.classList.toggle("open");
-          el.textContent = (open ? "- " : "+ ") + label;
+          const open = body.classList.toggle('open');
+          el.textContent = (open ? '- ' : '+ ') + label;
         });
       });
 
@@ -343,26 +664,30 @@
 
       let lastSearchData = null;
 
-      document.getElementById("btnRunSearch").onclick = async () => {
-        const btn = document.getElementById("btnRunSearch");
-        const spinner = document.getElementById("searchSpinner");
+      document.getElementById('btnRunSearch').onclick = async () => {
+        if (!currentUser?.is_verified) {
+          toast('Verify your email before searching', false);
+          return;
+        }
+        const btn = document.getElementById('btnRunSearch');
+        const spinner = document.getElementById('searchSpinner');
         btn.disabled = true;
-        spinner.classList.add("active");
-        document.getElementById("searchResults").innerHTML = "";
+        spinner.classList.add('active');
+        document.getElementById('searchResults').innerHTML = '';
 
         const body = {
-          location: document.getElementById("s-location").value,
-          field: document.getElementById("s-field").value,
-          experience: document.getElementById("s-experience").value,
-          target_roles: document.getElementById("s-roles").value.split(",").map(s => s.trim()).filter(Boolean),
+          location: document.getElementById('s-location').value,
+          field: document.getElementById('s-field').value,
+          experience: document.getElementById('s-experience').value,
+          target_roles: document.getElementById('s-roles').value.split(',').map(s => s.trim()).filter(Boolean),
         };
 
-        const r = await postJson("/search", body);
-        spinner.classList.remove("active");
+        const r = await postJson('/search', body);
+        spinner.classList.remove('active');
         btn.disabled = false;
 
         if (!r.ok) {
-          toast(`Search failed: ${typeof r.data === "string" ? r.data : r.data?.detail || r.status}`, false);
+          toast(`Search failed: ${typeof r.data === 'string' ? r.data : r.data?.detail || r.status}`, false);
           return;
         }
 
@@ -370,14 +695,14 @@
         renderSearchResults(r.data);
       };
 
-      document.getElementById("btnClearResults").onclick = () => {
-        document.getElementById("searchResults").innerHTML = "";
+      document.getElementById('btnClearResults').onclick = () => {
+        document.getElementById('searchResults').innerHTML = '';
         lastSearchData = null;
       };
 
       function renderSearchResults(data) {
-        const container = document.getElementById("searchResults");
-        container.innerHTML = "";
+        const container = document.getElementById('searchResults');
+        container.innerHTML = '';
 
         const items = data?.items || [];
         if (!items.length) {
@@ -385,8 +710,8 @@
           return;
         }
 
-        const title = document.createElement("div");
-        title.className = "section-title";
+        const title = document.createElement('div');
+        title.className = 'section-title';
         title.innerHTML = `Results <span class="count">(${items.length} companies)</span>`;
         container.appendChild(title);
 
@@ -395,147 +720,220 @@
           const contacts = item.contacts || [];
           const draft = item.draft || {};
 
-          const card = document.createElement("div");
-          card.className = "card";
+          const card = document.createElement('div');
+          card.className = 'card';
+          card.id = `search-card-${idx}`;
 
-          // Company header
           let html = `<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">`;
           html += `<div>`;
-          html += `<strong>${esc(company.name || "Unnamed")}</strong>`;
+          html += `<strong>${esc(company.name || 'Unnamed')}</strong>`;
           if (company.website) html += `<div class="mono muted" style="margin-top:2px;">${esc(company.website)}</div>`;
           if (company.about) html += `<div class="muted" style="margin-top:2px;">${esc(company.about)}</div>`;
-          if (company.keywords && company.keywords.length) {
-            html += `<div class="muted" style="margin-top:4px;">${company.keywords.map(k => esc(k)).join(", ")}</div>`;
-          }
           html += `</div>`;
-          html += `<button class="sm primary" data-idx="${idx}" onclick="useDraft(${idx})">Use as Draft</button>`;
+          html += `<div class="btn-row" style="margin:0;flex-shrink:0;">`;
+          if (company.website) {
+            html += `<button class="sm primary" id="findEmailsBtn-${idx}" data-idx="${idx}">Find Emails</button>`;
+          }
+          html += `<button class="sm" data-save-idx="${idx}">Save Company</button>`;
+          html += `</div>`;
           html += `</div>`;
 
-          // Contacts
+          // Contacts + draft area (populated after Find Emails)
+          html += `<div id="emails-area-${idx}">`;
           if (contacts.length) {
-            html += `<div style="margin-top:8px;"><label style="margin:0;">Contacts (${contacts.length})</label>`;
-            contacts.forEach(c => {
-              html += `<div class="contact-row">`;
-              html += `<span class="contact-email">${esc(c.email)}</span>`;
-              if (c.role_guess) html += `<span class="contact-role">${esc(c.role_guess)}</span>`;
-              html += `<button class="sm" onclick="useDraftWithEmail(${idx}, '${esc(c.email)}')">Use</button>`;
-              html += `</div>`;
-            });
-            html += `</div>`;
-          } else {
-            html += `<div class="muted" style="margin-top:6px;">No contacts found</div>`;
+            html += renderContactsAndDraft(idx, contacts, draft);
           }
-
-          // Draft preview
-          if (draft.subject || draft.body) {
-            html += `<details style="margin-top:8px;"><summary class="muted" style="cursor:pointer;">Preview generated email</summary>`;
-            html += `<div style="margin-top:4px;padding:8px;border-radius:6px;background:var(--bg-subtle);font-size:12px;">`;
-            html += `<div><strong>Subject:</strong> ${esc(draft.subject)}</div>`;
-            html += `<div style="margin-top:4px;white-space:pre-wrap;">${esc(draft.body)}</div>`;
-            html += `</div></details>`;
-          }
+          html += `</div>`;
 
           card.innerHTML = html;
           container.appendChild(card);
+
+          // Attach Find Emails handler
+          const feBtn = card.querySelector(`#findEmailsBtn-${idx}`);
+          if (feBtn) feBtn.onclick = () => findEmails(idx);
+
+          // Attach Save Company handler
+          const saveBtn = card.querySelector(`[data-save-idx="${idx}"]`);
+          if (saveBtn) saveBtn.onclick = () => saveCompanyFromSearch(idx);
         });
       }
 
-      window.useDraft = function(idx) {
+      function renderContactsAndDraft(idx, contacts, draft) {
+        let html = '';
+        if (contacts.length) {
+          html += `<div style="margin-top:8px;"><label style="margin:0;">Contacts (${contacts.length})</label>`;
+          contacts.forEach(c => {
+            html += `<div class="contact-row">`;
+            html += `<span class="contact-email">${esc(c.email)}</span>`;
+            if (c.role_guess) html += `<span class="contact-role">${esc(c.role_guess)}</span>`;
+            html += `<button class="sm" data-use-email="${esc(c.email)}" data-use-idx="${idx}">Use</button>`;
+            html += `</div>`;
+          });
+          html += `</div>`;
+        } else {
+          html += `<div class="muted" style="margin-top:6px;">No contacts found</div>`;
+        }
+        if (draft && (draft.subject || draft.body)) {
+          html += `<details style="margin-top:8px;"><summary class="muted" style="cursor:pointer;">Preview generated email</summary>`;
+          html += `<div style="margin-top:4px;padding:8px;border-radius:6px;background:var(--bg-subtle);font-size:12px;">`;
+          html += `<div><strong>Subject:</strong> ${esc(draft.subject)}</div>`;
+          html += `<div style="margin-top:4px;white-space:pre-wrap;">${esc(draft.body)}</div>`;
+          html += `</div></details>`;
+        }
+        return html;
+      }
+
+      async function findEmails(idx) {
+        if (!lastSearchData?.items?.[idx]) return;
+        const item = lastSearchData.items[idx];
+        const company = item.company || {};
+        if (!company.website) { toast('No website for this company', false); return; }
+
+        const btn = document.getElementById(`findEmailsBtn-${idx}`);
+        if (btn) { btn.disabled = true; btn.textContent = 'Searching...'; }
+
+        const body = {
+          company_name: company.name || '',
+          company_website: company.website,
+          field: document.getElementById('s-field').value,
+          experience: document.getElementById('s-experience').value,
+        };
+
+        const r = await postJson('/find-emails', body);
+        if (btn) { btn.disabled = false; btn.textContent = 'Find Emails'; }
+
+        if (!r.ok) {
+          toast(`Email search failed: ${r.data?.detail || r.status}`, false);
+          return;
+        }
+
+        // Update cached data
+        lastSearchData.items[idx].contacts = r.data.contacts || [];
+        lastSearchData.items[idx].draft = r.data.draft || {};
+
+        const area = document.getElementById(`emails-area-${idx}`);
+        if (area) {
+          area.innerHTML = renderContactsAndDraft(idx, r.data.contacts || [], r.data.draft || {});
+          // Bind Use buttons
+          area.querySelectorAll('[data-use-email]').forEach(b => {
+            b.onclick = () => useDraftWithEmail(idx, b.dataset.useEmail);
+          });
+        }
+        if (btn) {
+          btn.textContent = 'Use as Draft';
+          btn.onclick = () => useDraft(idx);
+        }
+      }
+
+      function useDraft(idx) {
         if (!lastSearchData?.items?.[idx]) return;
         const item = lastSearchData.items[idx];
         const company = item.company || {};
         const contacts = item.contacts || [];
         const draft = item.draft || {};
 
-        let email = contacts[0]?.email || "";
+        let email = contacts[0]?.email || '';
         if (!email && company.website) {
-          const host = company.website.replace(/^https?:\/\//, "").split("/")[0];
+          const host = company.website.replace(/^https?:\/\//, '').split('/')[0];
           email = `hiring@${host}`;
         }
 
         fillDraftForm(company.name, company.website, email, draft.subject, draft.body);
-        switchToTab("outreach");
-      };
+        switchToTab('outreach');
+      }
 
-      window.useDraftWithEmail = function(idx, email) {
+      function useDraftWithEmail(idx, email) {
         if (!lastSearchData?.items?.[idx]) return;
         const item = lastSearchData.items[idx];
         const company = item.company || {};
         const draft = item.draft || {};
 
         fillDraftForm(company.name, company.website, email, draft.subject, draft.body);
-        switchToTab("outreach");
-      };
+        switchToTab('outreach');
+      }
+
+      async function saveCompanyFromSearch(idx) {
+        if (!lastSearchData?.items?.[idx]) return;
+        const company = lastSearchData.items[idx].company || {};
+        const r = await postJson('/companies', {
+          name: company.name || '',
+          website: company.website || null,
+          location: document.getElementById('s-location').value || null,
+          field: document.getElementById('s-field').value || null,
+          about: company.about || null,
+        });
+        if (r.ok) {
+          toast(`"${company.name}" saved to companies`);
+        } else {
+          toast(`Save failed: ${r.data?.detail || r.status}`, false);
+        }
+      }
 
       function fillDraftForm(name, website, email, subject, body) {
-        document.getElementById("o-companyName").value = name || "";
-        document.getElementById("o-companyWebsite").value = website || "";
-        document.getElementById("o-toEmail").value = email || "";
-        document.getElementById("o-subject").value = subject || "";
-        document.getElementById("o-body").value = body || "";
-        // open the form
-        const formBody = document.getElementById("draftFormBody");
-        if (!formBody.classList.contains("open")) {
-          document.getElementById("toggleDraftForm").click();
+        document.getElementById('o-companyName').value = name || '';
+        document.getElementById('o-companyWebsite').value = website || '';
+        document.getElementById('o-toEmail').value = email || '';
+        document.getElementById('o-subject').value = subject || '';
+        document.getElementById('o-body').value = body || '';
+        const formBody = document.getElementById('draftFormBody');
+        if (!formBody.classList.contains('open')) {
+          document.getElementById('toggleDraftForm').click();
         }
       }
 
       function switchToTab(tab) {
-        document.querySelectorAll(".tab").forEach(t => {
-          t.classList.toggle("active", t.dataset.tab === tab);
+        document.querySelectorAll('.tab').forEach(t => {
+          t.classList.toggle('active', t.dataset.tab === tab);
         });
-        document.querySelectorAll(".panel").forEach(p => {
-          p.classList.toggle("active", p.id === `panel-${tab}`);
+        document.querySelectorAll('.panel').forEach(p => {
+          p.classList.toggle('active', p.id === `panel-${tab}`);
         });
-        if (tab === "outreach") loadOutreach();
-        if (tab === "companies") loadCompanies();
+        if (tab === 'outreach') loadOutreach();
+        if (tab === 'companies') loadCompanies();
       }
 
       // ═══════ OUTREACH ═══════
 
-      document.getElementById("btnCreateDraft").onclick = async () => {
+      document.getElementById('btnCreateDraft').onclick = async () => {
         const body = {
-          user_id: Number(document.getElementById("o-userId").value),
-          company_name: document.getElementById("o-companyName").value,
-          company_website: document.getElementById("o-companyWebsite").value || null,
-          to_email: document.getElementById("o-toEmail").value,
-          subject: document.getElementById("o-subject").value,
-          body: document.getElementById("o-body").value,
+          company_name: document.getElementById('o-companyName').value,
+          company_website: document.getElementById('o-companyWebsite').value || null,
+          to_email: document.getElementById('o-toEmail').value,
+          subject: document.getElementById('o-subject').value,
+          body: document.getElementById('o-body').value,
         };
 
         if (!body.company_name || !body.to_email || !body.subject) {
-          toast("Fill in company name, email, and subject", false);
+          toast('Fill in company name, email, and subject', false);
           return;
         }
 
-        const r = await postJson("/outreach", body);
+        const r = await postJson('/outreach', body);
         if (r.ok) {
           toast(`Draft #${r.data.id} created`);
           loadOutreach();
-          // collapse form
-          const formBody = document.getElementById("draftFormBody");
-          if (formBody.classList.contains("open")) {
-            document.getElementById("toggleDraftForm").click();
+          const formBody = document.getElementById('draftFormBody');
+          if (formBody.classList.contains('open')) {
+            document.getElementById('toggleDraftForm').click();
           }
         } else {
           toast(`Failed: ${r.data?.detail || r.status}`, false);
         }
       };
 
-      document.getElementById("btnClearDraft").onclick = () => {
-        ["o-companyName","o-companyWebsite","o-toEmail","o-subject","o-body"].forEach(id => {
-          document.getElementById(id).value = "";
+      document.getElementById('btnClearDraft').onclick = () => {
+        ['o-companyName','o-companyWebsite','o-toEmail','o-subject','o-body'].forEach(id => {
+          document.getElementById(id).value = '';
         });
       };
 
-      document.getElementById("btnRefreshOutreach").onclick = () => loadOutreach();
+      document.getElementById('btnRefreshOutreach').onclick = () => loadOutreach();
 
       async function loadOutreach() {
-        const userId = Number(document.getElementById("o-filterUserId").value);
-        const statusFilter = document.getElementById("o-filterStatus").value;
-        const container = document.getElementById("outreachList");
+        const statusFilter = document.getElementById('o-filterStatus').value;
+        const container = document.getElementById('outreachList');
 
-        const r = await api(`/outreach?user_id=${encodeURIComponent(userId)}`);
+        const r = await api('/outreach');
         if (!r.ok) {
           container.innerHTML = `<div class="empty">Failed to load outreach records</div>`;
           return;
@@ -546,7 +944,7 @@
           items = items.filter(o => o.status === statusFilter);
         }
 
-        document.getElementById("outreachCount").textContent = `(${items.length})`;
+        document.getElementById('outreachCount').textContent = `(${items.length})`;
 
         if (!items.length) {
           container.innerHTML = '<div class="empty">No outreach records found</div>';
@@ -565,27 +963,29 @@
           html += `<td>${badge(o.status)}</td>`;
           html += `<td class="btn-row" style="margin:0;">`;
 
-          if (o.status === "pending") {
-            html += `<button class="sm success" onclick="event.stopPropagation();outreachAction(${o.id},'approve')">Approve</button>`;
-            html += `<button class="sm danger" onclick="event.stopPropagation();outreachAction(${o.id},'reject')">Reject</button>`;
+          if (o.status === 'pending') {
+            html += `<button class="sm success" data-action="approve" data-oid="${o.id}">Approve</button>`;
+            html += `<button class="sm danger" data-action="reject" data-oid="${o.id}">Reject</button>`;
           }
-          if (o.status === "approved") {
-            html += `<button class="sm primary" onclick="event.stopPropagation();outreachAction(${o.id},'send')">Send</button>`;
-            html += `<button class="sm danger" onclick="event.stopPropagation();outreachAction(${o.id},'reject')">Reject</button>`;
+          if (o.status === 'approved') {
+            html += `<button class="sm primary" data-action="send" data-oid="${o.id}">Send</button>`;
+            html += `<button class="sm danger" data-action="reject" data-oid="${o.id}">Reject</button>`;
           }
-          if (o.status !== "sent") {
-            html += `<button class="sm" onclick="event.stopPropagation();toggleEdit(${o.id})">Edit</button>`;
+          if (o.status !== 'sent') {
+            html += `<button class="sm" data-action="edit" data-oid="${o.id}">Edit</button>`;
           }
+          // Copy button for manual sending
+          html += `<button class="sm" data-action="copy" data-oid="${o.id}">Copy</button>`;
 
           html += `</td></tr>`;
 
-          // Expandable body row (read-only view + edit form)
+          // Expandable detail row
           html += `<tr class="expand-row" id="expand-${o.id}" style="display:none;">`;
           html += `<td colspan="5" style="padding:8px 8px 8px 28px;background:var(--bg-subtle);font-size:12px;">`;
           html += `<div id="view-${o.id}" style="white-space:pre-wrap;">`;
           html += `<strong>To:</strong> ${esc(o.email)}\n<strong>Subject:</strong> ${esc(o.message_subject)}\n\n${esc(o.message_body)}`;
           html += `</div>`;
-          if (o.status !== "sent") {
+          if (o.status !== 'sent') {
             html += `<div id="editForm-${o.id}" style="display:none;margin-top:8px;">`;
             html += `<div style="display:grid;gap:6px;">`;
             html += `<div><label>To Email</label><input id="edit-email-${o.id}" value="${esc(o.email)}" /></div>`;
@@ -593,8 +993,8 @@
             html += `<div><label>Body</label><textarea id="edit-body-${o.id}" rows="6" style="min-height:120px;">${esc(o.message_body)}</textarea></div>`;
             html += `</div>`;
             html += `<div class="btn-row" style="margin-top:6px;">`;
-            html += `<button class="sm primary" onclick="saveEdit(${o.id})">Save</button>`;
-            html += `<button class="sm" onclick="cancelEdit(${o.id})">Cancel</button>`;
+            html += `<button class="sm primary" data-save-oid="${o.id}">Save</button>`;
+            html += `<button class="sm" data-cancel-oid="${o.id}">Cancel</button>`;
             html += `</div></div>`;
           }
           html += `</td></tr>`;
@@ -603,84 +1003,111 @@
         html += `</tbody></table>`;
         container.innerHTML = html;
 
-        // Click to expand
-        container.querySelectorAll("tr.clickable").forEach(tr => {
-          tr.addEventListener("click", () => {
+        // Bind click-to-expand
+        container.querySelectorAll('tr.clickable').forEach(tr => {
+          tr.addEventListener('click', () => {
             const oid = tr.dataset.oid;
             const expandRow = document.getElementById(`expand-${oid}`);
-            const visible = expandRow.style.display !== "none";
-            expandRow.style.display = visible ? "none" : "table-row";
+            expandRow.style.display = expandRow.style.display === 'none' ? 'table-row' : 'none';
           });
+        });
+
+        // Bind action buttons
+        container.querySelectorAll('[data-action]').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const action = btn.dataset.action;
+            const oid = btn.dataset.oid;
+
+            if (action === 'edit') {
+              toggleEdit(oid);
+            } else if (action === 'copy') {
+              copyOutreach(oid, items);
+            } else {
+              await outreachAction(oid, action);
+            }
+          });
+        });
+
+        // Bind save/cancel edit buttons
+        container.querySelectorAll('[data-save-oid]').forEach(btn => {
+          btn.onclick = (e) => { e.stopPropagation(); saveEdit(btn.dataset.saveOid); };
+        });
+        container.querySelectorAll('[data-cancel-oid]').forEach(btn => {
+          btn.onclick = (e) => { e.stopPropagation(); cancelEdit(btn.dataset.cancelOid); };
         });
       }
 
-      window.outreachAction = async function(id, action) {
-        const r = await api(`/outreach/${id}/${action}`, { method: "POST" });
+      async function outreachAction(id, action) {
+        const r = await api(`/outreach/${id}/${action}`, { method: 'POST', headers: authHeaders() });
         if (r.ok) {
-          const label = action.charAt(0).toUpperCase() + action.slice(1);
-          toast(`${label}: outreach #${id}`);
+          toast(`${action.charAt(0).toUpperCase() + action.slice(1)}: outreach #${id}`);
           loadOutreach();
         } else {
           toast(`${action} failed: ${r.data?.detail || r.status}`, false);
         }
-      };
+      }
 
-      window.toggleEdit = function(id) {
+      function toggleEdit(id) {
         const expandRow = document.getElementById(`expand-${id}`);
         const editForm = document.getElementById(`editForm-${id}`);
         const viewDiv = document.getElementById(`view-${id}`);
         if (!editForm) return;
-        const isEditing = editForm.style.display !== "none";
+        const isEditing = editForm.style.display !== 'none';
         if (isEditing) {
-          editForm.style.display = "none";
-          viewDiv.style.display = "";
+          editForm.style.display = 'none';
+          viewDiv.style.display = '';
         } else {
-          expandRow.style.display = "table-row";
-          viewDiv.style.display = "none";
-          editForm.style.display = "";
+          expandRow.style.display = 'table-row';
+          viewDiv.style.display = 'none';
+          editForm.style.display = '';
         }
-      };
+      }
 
-      window.cancelEdit = function(id) {
-        const editForm = document.getElementById(`editForm-${id}`);
-        const viewDiv = document.getElementById(`view-${id}`);
-        editForm.style.display = "none";
-        viewDiv.style.display = "";
-      };
+      function cancelEdit(id) {
+        document.getElementById(`editForm-${id}`).style.display = 'none';
+        document.getElementById(`view-${id}`).style.display = '';
+      }
 
-      window.saveEdit = async function(id) {
+      async function saveEdit(id) {
         const email = document.getElementById(`edit-email-${id}`).value.trim();
         const subject = document.getElementById(`edit-subject-${id}`).value.trim();
         const body = document.getElementById(`edit-body-${id}`).value;
-        if (!email || !subject) { toast("Email and subject are required", false); return; }
-        const r = await api(`/outreach/${id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ to_email: email, subject, body }),
-        });
+        if (!email || !subject) { toast('Email and subject are required', false); return; }
+        const r = await patchJson(`/outreach/${id}`, { to_email: email, subject, body });
         if (r.ok) {
           toast(`Draft #${id} updated`);
           loadOutreach();
         } else {
           toast(`Save failed: ${r.data?.detail || r.status}`, false);
         }
-      };
+      }
 
-      document.getElementById("o-filterStatus").onchange = () => loadOutreach();
-      document.getElementById("o-filterUserId").onchange = () => loadOutreach();
+      function copyOutreach(id, items) {
+        const o = items.find(i => i.id == id);
+        if (!o) return;
+        const text = `To: ${o.email}\nSubject: ${o.message_subject}\n\n${o.message_body}`;
+        navigator.clipboard.writeText(text).then(() => {
+          toast('Copied to clipboard - paste into your email client');
+        }).catch(() => {
+          toast('Copy failed', false);
+        });
+      }
+
+      document.getElementById('o-filterStatus').onchange = () => loadOutreach();
 
       // ═══════ COMPANIES ═══════
 
       async function loadCompanies() {
-        const container = document.getElementById("companyList");
-        const r = await api("/companies");
+        const container = document.getElementById('companyList');
+        const r = await api('/companies');
         if (!r.ok) {
           container.innerHTML = '<div class="empty">Failed to load companies</div>';
           return;
         }
 
         const items = r.data || [];
-        document.getElementById("companyCount").textContent = `(${items.length})`;
+        document.getElementById('companyCount').textContent = `(${items.length})`;
 
         if (!items.length) {
           container.innerHTML = '<div class="empty">No companies saved yet. Run a search or add one manually.</div>';
@@ -695,9 +1122,9 @@
           html += `<tr>`;
           html += `<td class="mono">${c.id}</td>`;
           html += `<td>${esc(c.name)}</td>`;
-          html += `<td class="mono">${esc(c.website || "—")}</td>`;
-          html += `<td>${esc(c.location || "—")}</td>`;
-          html += `<td>${esc(c.field || "—")}</td>`;
+          html += `<td class="mono">${c.website ? `<a href="${esc(c.website)}" target="_blank" style="color:var(--accent);">${esc(c.website)}</a>` : '&mdash;'}</td>`;
+          html += `<td>${esc(c.location || '')}</td>`;
+          html += `<td>${esc(c.field || '')}</td>`;
           html += `</tr>`;
           if (c.about) {
             html += `<tr><td></td><td colspan="4" class="muted">${esc(c.about)}</td></tr>`;
@@ -708,28 +1135,33 @@
         container.innerHTML = html;
       }
 
-      document.getElementById("btnRefreshCompanies").onclick = () => loadCompanies();
+      document.getElementById('btnRefreshCompanies').onclick = () => loadCompanies();
 
-      document.getElementById("btnAddCompany").onclick = async () => {
+      document.getElementById('btnAddCompany').onclick = async () => {
         const body = {
-          name: document.getElementById("c-name").value,
-          website: document.getElementById("c-website").value || null,
-          location: document.getElementById("c-location").value || null,
-          field: document.getElementById("c-field").value || null,
-          about: document.getElementById("c-about").value || null,
+          name: document.getElementById('c-name').value,
+          website: document.getElementById('c-website').value || null,
+          location: document.getElementById('c-location').value || null,
+          field: document.getElementById('c-field').value || null,
+          about: document.getElementById('c-about').value || null,
         };
 
-        if (!body.name) { toast("Company name is required", false); return; }
+        if (!body.name) { toast('Company name is required', false); return; }
 
-        const r = await postJson("/companies", body);
+        const r = await postJson('/companies', body);
         if (r.ok) {
           toast(`Company "${body.name}" added`);
           loadCompanies();
-          ["c-name","c-website","c-location","c-field","c-about"].forEach(id => document.getElementById(id).value = "");
+          ['c-name','c-website','c-location','c-field','c-about'].forEach(id => document.getElementById(id).value = '');
         } else {
           toast(`Failed: ${r.data?.detail || r.status}`, false);
         }
       };
+
+      // ── Boot ──
+
+      await initSupabase();
+    })();
     </script>
   </body>
 </html>

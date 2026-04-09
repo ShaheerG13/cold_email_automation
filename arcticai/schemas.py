@@ -51,6 +51,14 @@ class UserOut(BaseModel):
     tier: str
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class MessageResponse(BaseModel):
+    message: str
+
+
 # ── Outreach ──
 
 class OutreachCreateRequest(BaseModel):
@@ -88,6 +96,13 @@ class OutreachUpdateRequest(BaseModel):
 
 
 # ── Companies ──
+
+class FindEmailsRequest(BaseModel):
+    company_name: str
+    company_website: str
+    field: str = ""
+    experience: str = ""
+
 
 class CompanyCreate(BaseModel):
     name: str

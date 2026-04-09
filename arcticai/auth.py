@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 import os
 
 from fastapi import Depends, Header, HTTPException, status
+
+logger = logging.getLogger("arcticai.auth")
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from supabase import Client, create_client
@@ -49,6 +52,7 @@ async def get_or_create_user(db: AsyncSession, supabase_uid: str, email: str, na
     db.add(user)
     await db.commit()
     await db.refresh(user)
+    logger.info("user_created id=%d email=%s", user.id, email)
     return user
 
 
@@ -73,6 +77,7 @@ async def get_current_user(
         if sb_user is None:
             raise credentials_exception
     except Exception:
+        logger.warning("auth_failed reason=invalid_token")
         raise credentials_exception
 
     email_confirmed = sb_user.email_confirmed_at is not None
@@ -118,6 +123,7 @@ def rate_limit(action: str, default_limit: int):
         try:
             await enforce_daily_limit(key=f"user:{user.id}:{action}", max_per_day=limit)
         except RuntimeError:
+            logger.warning("rate_limited user=%d action=%s limit=%d tier=%s", user.id, action, limit, user.tier)
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                 detail=f"Daily limit exceeded for {action} ({limit}/day on {user.tier} tier)",
