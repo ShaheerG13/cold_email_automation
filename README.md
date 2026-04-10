@@ -1,6 +1,7 @@
-# ArcticAI — Cold Email Automation SaaS
+# ArcticAI: Cold Email Automation SaaS
 
 **- A WORK IN PROGRESS**
+(Via Claude Code)
 
 ArcticAI automates cold email outreach for job seekers. Search for companies by field and location, find contact emails, generate personalized email drafts via LLM, and send them after review.
 
