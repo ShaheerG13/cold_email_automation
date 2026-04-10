@@ -1,5 +1,7 @@
 # ArcticAI (Cold Email Automation) — Backend Skeleton
 
+**a work in progress**
+
 FastAPI backend
 
 User input → company discovery → enrichment → email discovery → AI draft generation → user approval → send
